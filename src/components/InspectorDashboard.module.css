@@ -1,0 +1,57 @@
+/* Main content styling */
+.INSMainContent {
+  margin-left: 220px;
+  padding: 20px;
+}
+
+.INSHeader {
+  margin-bottom: 20px;
+}
+
+.INSHeader h1 {
+  margin: 0 0 8px 0;
+  font-size: 2rem;
+  color: #333;
+}
+
+.INSHeader p {
+  margin: 0;
+  color: #666;
+  font-size: 1rem;
+}
+
+/* Summary cards styling */
+.INSSummaryCards {
+  display: flex;
+  gap: 1rem;
+  margin-top: 20px;
+}
+
+.INSCard {
+  flex: 1;
+  background-color: #f0f0f0;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.INSCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.INSCard h3 {
+  margin: 0 0 10px 0;
+  font-size: 1.2rem;
+  color: #333;
+  font-weight: 600;
+}
+
+.INSCard span {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #007bff;
+  display: block;
+}

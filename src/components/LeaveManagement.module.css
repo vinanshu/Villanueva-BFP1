@@ -1,0 +1,534 @@
+
+
+/* ================================
+   TABLE STYLES
+================================ */
+.leaveTable {
+ width: 101%;
+  padding: 20px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  margin-left: -5px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  text-align: center;
+position: relative;
+top: 6vh;
+   box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+}
+.leaveTable .leaveNoRequests {
+  text-align: center;
+  font-style: italic;
+  color: var(--text-primary);
+  padding: 40px 20px;
+  font-size: 16px;
+  background: rgba(8, 112, 230, 0.1);
+  border-radius: 8px;
+  border: 2px dashed rgba(8, 112, 230, 0.3);
+  margin: 10px 0;
+  
+}
+.leaveTable thead tr {
+  background: var(--bg-header);
+}
+
+.leaveTable thead td {
+  border-bottom: 3px solid var(--border);
+}
+
+.leaveTable th {
+  padding: 14px 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #529ae1;
+}
+
+.leaveTable tbody td {
+  padding: 14px 16px;
+  background: var(--bg-main);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.595);
+  color: var(--text-primary);
+  transition: background 0.25s ease;
+}
+
+/* Alternate row colors */
+.leaveTable tbody tr:nth-child(odd) td {
+  background: #ffffff;
+}
+.leaveTable tbody tr:nth-child(even) td {
+  background: #81878c;
+}
+
+/* Row hover effects (staircase effect) */
+.leaveTable tbody tr {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+.leaveTable tbody tr:hover {
+    background: #549ee9; /* or another blue shade */
+    color: #fff; /* optional: make text white for contrast */
+    transform: translateY(-4px) scale(1.01);
+    box-shadow: 0 4px 8px rgba(33, 17, 17, 0.914), 0 8px 16px rgba(0, 0, 0, 0.1);
+    z-index: 5;
+    position: relative;
+}
+.leaveTable tbody tr:hover td {
+    background: #549ee9 !important; /* force override */
+    color: #fff; /* optional: make text white */
+}
+
+.leaveTable tbody tr:has(+ tr:hover),
+.leaveTable tbody tr:hover + tr {
+  background: rgba(255,215,0,0.06);
+}
+
+/* Status cells */
+.leaveTable td.leavePending { color: var(--bg-pending); font-weight: 600; }
+.leaveTable td.leaveApproved { color: var(--bg-approved); font-weight: 600; }
+.leaveTable td.leaveRejected { color: var(--bg-reject); font-weight: 600; }
+.leaveApprove{
+
+   background: #31AC04;
+}
+.leaveApprove:hover{
+
+   color: black;
+  transform: translateY(-2px);
+  transition: ease 0.3s;
+ background-color: rgb(71, 255, 4);
+}
+
+.leaveReject{
+
+   background: #DF0303;
+}
+.leaveReject:hover{
+
+  color: black;
+  transform: translateY(-2px);
+  transition: ease 0.3s;
+ background-color: #ff6e6e;
+}
+/* Actions buttons */
+.leaveActions button {
+  color: #FFFFFF;
+  border: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-right: 6px;
+  transition: all 0.25s ease;
+}
+
+.leaveActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ================================
+   LEAVE CARDS STYLES
+================================ */
+.leaveCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-left: 20px;
+  margin-top: 35px;
+}
+
+.leaveCard {
+  background: var(--bg-cards);
+  border-radius: 14px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+ box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255,215,0,0.25);
+}
+.leaveCard:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.15), 0 16px 32px rgba(0,0,0,0.12);
+}
+
+.leaveCard h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.leaveMeta,
+.leaveDates {
+  font-size: 14px;
+  margin: 6px 0;
+  color: var(--text-secondary);
+}
+
+.leaveBadge {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+  margin-top: 10px;
+}
+.leaveBadge.leaveApproved { color: var(--bg-approved); }
+.leaveBadge.leavePending { color: var(--bg-pending); }
+.leaveBadge.leaveRejected { color: var(--bg-reject); }
+
+/* Card action buttons */
+.leaveCardActions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+}
+.leaveCardActions button {
+  flex: 1;
+  background: linear-gradient(135deg, #9f4204, #5a001f);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.leaveCardActions button:hover {
+  transform: translateY(-2px);
+  background: var(--hover-glow);
+  color: #002642;
+}
+
+.leaveNoRequests {
+  text-align: center;
+  font-style: italic;
+  color: var(--text-primary);
+  grid-column: 1 / -1;
+  padding: 40px 20px;
+  font-size: 18px;
+  background: rgba(8, 112, 230, 0.711);
+  border-radius: 12px;
+  width: 400px;
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  margin: -50px 390px 30px ;
+position: absolute;
+top: 47vh;
+ box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+}
+
+/* ================================
+   TOGGLE BUTTON
+================================ */
+.leaveViewToggle {
+  background: var(--bg-buttons);
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  margin-left: auto;
+  margin-bottom: -10px;
+}
+.leaveViewToggle:hover {
+  transform: scale(1.15);
+  color: var(--text-primary);
+}
+.leaveViewToggle.leaveClicked { animation: leaveClickPop 0.25s ease; }
+
+/* ================================
+   MODAL STYLES
+================================ */
+.leaveModal {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  justify-content: center;
+  align-items: center;
+}
+.leaveModal.leaveActive { display: flex; }
+
+.leaveModalContent {
+  background: #fff;
+  color: #333;
+  padding: 25px 30px;
+  border-radius: 14px;
+  width: 450px;
+  max-width: 90%;
+  position: relative;
+  animation: leaveFadeIn 0.25s ease-in-out;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.15);
+}
+
+.leaveCloseBtn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  font-size: 26px;
+  font-weight: bold;
+  color: #333;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.leaveCloseBtn:hover { color: #e63946; }
+
+#leaveModalBody {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px 15px;
+  margin-top: 15px;
+}
+#leaveModalBody p { margin: 6px 0; font-size: 14px; line-height: 1.4; }
+#leaveModalBody p b { display: block; font-weight: 600; color: var(--text-primary); }
+#leaveModalBody span, #leaveModalBody p:not(:first-child) { color: var(--text-primary); }
+#leaveModalBody .leaveApproved { color: var(--bg-approved); font-weight: 600; }
+#leaveModalBody .leavePending { color: var(--bg-pending); font-weight: 600; }
+#leaveModalBody .leaveRejected { color: var(--bg-reject); font-weight: 600; }
+
+/* ================================
+   PAGINATION STYLES FOR TABLE
+================================ */
+/* Add to your CSS */
+.leavePaginationBtn {
+  background: var(--bg-buttons);
+  color: var(--text-secondary);
+  border: none;
+  padding: 6px 12px;
+  margin-left: 6px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.leavePaginationBtn:hover:not(:disabled) {
+  color: var(--text-primary);
+  transform: scale(1.15);
+}
+
+.leavePaginationBtn.leaveActive {
+  background: #74B1EF;
+  color: var(--text-secondary);
+  pointer-events: none;
+  transform: scale(1.35);
+}
+
+.leavePaginationBtn:disabled,
+.leavePaginationBtn.leaveDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.leavePaginationBtn:disabled:hover,
+.leavePaginationBtn.leaveDisabled:hover {
+  color: var(--text-secondary) !important;
+  transform: none !important;
+}
+
+.leavePaginationContainer1 button {
+  background: var(--bg-buttons);
+  color: var(--text-secondary);
+  border: none;
+  padding: 6px 12px;
+  margin-left: 6px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.leavePaginationContainer1 button:hover {
+  color: var(--text-primary);
+  transform: scale(1.15);
+}
+.leavePaginationContainer1 button.leaveActive {
+ background: #74B1EF;
+  color: var(--text-secondary);
+  pointer-events: none;
+  transform: scale(1.15);
+}
+.leavePaginationContainer1 button.leaveClicked { animation: leaveClickPop 0.25s ease; }
+
+
+
+
+
+.leavePaginationEllipsis {
+  padding: 6px 8px;
+  margin: 0 4px;
+  color: var(--text-secondary);
+  font-weight: bold;
+  user-select: none;
+}
+
+.leavePaginationContainer1{
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: -8px;
+  padding-right: 10px;
+  position: absolute;
+    bottom: 435px; /* Position below the table */
+  right: 0;
+
+
+}
+
+.leavePaginationContainer1 button:disabled,
+.leavePaginationContainer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.leavePaginationContainer1 button:disabled:hover,
+.leavePaginationContainer button:disabled:hover {
+  color: var(--text-secondary) !important;
+  transform: none !important;
+}
+
+.leaveDisabled {
+  opacity: 0.5;
+  cursor: not-allowed !important;
+}
+
+.leaveDisabled:hover {
+  transform: none !important;
+  color: var(--text-secondary) !important;
+}
+
+
+
+
+
+
+/* ================================
+   PAGINATION STYLES
+================================ */
+.leavePaginationContainer {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+  padding-right: 10px;
+  position: relative;
+  gap: 10px;
+  bottom: 310px;
+}
+.leavePaginationContainer button {
+  background: var(--bg-buttons);
+  color: var(--text-secondary);
+  border: none;
+  padding: 6px 12px;
+  margin-left: 6px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  
+}
+.leavePaginationContainer button:hover {
+  color: var(--text-primary);
+  transform: scale(1.15);
+}
+.leavePaginationContainer button.leaveActive {
+  background: #74B1EF;
+  color: var(--text-secondary);
+  pointer-events: none;
+  transform: scale(1.15);
+}
+.leavePaginationContainer button.leaveClicked { animation: leaveClickPop 0.25s ease; }
+
+/* ================================
+   FILTER & SEARCH STYLES
+================================ */
+.leaveFilterSearchWrapper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 15px;
+  margin-left: 20px;
+  margin-bottom: 20px;
+}
+.leaveFilterGroup, .leaveSearchGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#leaveStatusFilter, #leaveSearchInput {
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(0,0,0,0.2);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.25s ease;
+}
+#leaveStatusFilter:hover, #leaveSearchInput:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.12);
+}
+#leaveStatusFilter:focus, #leaveSearchInput:focus {
+  border-color: #3e76e6;
+  box-shadow: 0 0 0 3px rgba(62,118,230,0.3);
+}
+label[for="leaveStatusFilter"] {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-left:9px;
+  vertical-align: middle;
+  transition: color 0.25s ease;
+}
+label[for="leaveStatusFilter"]:hover { color: var(--text-secondary); }
+#leaveStatusFilter {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24'><path fill='%23848484' d='M7 10l5 5 5-5H7z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 30px;
+}
+
+/* ================================
+   ANIMATIONS
+================================ */
+@keyframes leaveFadeIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes leaveClickPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.85); }
+  100% { transform: scale(1); }
+}
+
+/* ================================
+   RESPONSIVE
+================================ */
+@media (max-width: 500px) {
+  .leaveModalContent {
+    width: 90%;
+    padding: 20px;
+  }
+  #leaveModalBody {
+    grid-template-columns: 120px 1fr;
+    gap: 8px 12px;
+  }
+}

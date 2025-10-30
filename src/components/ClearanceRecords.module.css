@@ -1,0 +1,423 @@
+
+/* Filter and Search Controls */
+.CRSfilterStatus,
+.CRSfilterType,
+.CRSsearchBar {
+  padding: 8px 12px;
+  margin-left: 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.456);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.25s ease;
+  width: 130px;
+}
+.CRSfilterType{
+    width:160px;
+}
+.CRSfilterStatus:hover,
+.CRSfilterType:hover,
+.CRSsearchBar:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+}
+
+.CRSfilterStatus:focus,
+.CRSfilterType:focus,
+.CRSsearchBar:focus {
+  border-color: #3e76e6;
+  box-shadow: 0 0 0 3px rgba(62, 118, 230, 0.3);
+}
+
+.CRSfilterStatus,
+.CRSfilterType {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 24 24'><path fill='%23848484' d='M7 10l5 5 5-5H7z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 32px;
+}
+
+/* Top Controls */
+.CRStopControls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 20px;
+  gap: 15px;
+  margin-top: -5px;
+}
+
+.CRStableHeader {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.CRStableHeader select,
+.CRStableHeader input {
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.CRStableHeader input {
+  width: 250px;
+}
+
+.CRStableHeader select:focus,
+.CRStableHeader input:focus {
+  border-color: #1060af;
+  box-shadow: 0 0 6px rgba(16, 96, 175, 0.2);
+}
+
+/* Summary Cards */
+.CRSsummary {
+  display: flex;
+  gap: 20px;
+  margin: 20px;
+  flex-wrap: wrap;
+}
+
+.CRSsummaryCard {
+  flex: 1;
+  min-width: 150px;
+  padding: 20px;
+  border-radius: 12px;
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  border: none;
+}
+
+.CRSsummaryCard:hover {
+  transform: translateY(-4px);
+ 
+}
+
+.CRSsummaryCard.CRSactive {
+  border: 3px solid #fff;
+  transform: translateY(-6px) scale(1.05);
+}
+
+.CRStotal {
+  background: linear-gradient(135deg, #1060af, #529ae1);
+}
+
+.CRSpending {
+  background: linear-gradient(135deg, #ff9800, #ffb74d);
+}
+
+.CRScompleted {
+  background: linear-gradient(135deg, #4caf50, #81c784);
+}
+
+.CRSrejected {
+  background: linear-gradient(135deg, #f44336, #e57373);
+}
+
+.CRSsummaryCard h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.CRSsummaryCard p {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* Table Container */
+.CRStableContainer {
+  width: 100%;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+/* Table Styles */
+.CRStable {
+  width: 101%;
+  padding: 20px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  margin-left: -5px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  text-align: center;
+  position: relative;
+  top: 0vh;
+  box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+}
+
+.CRStable thead tr {
+  background: #529ae1;
+}
+
+.CRStable th {
+  padding: 14px 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: #000000;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.CRStable tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #000000;
+  color: #333;
+  transition: background 0.25s ease;
+}
+
+/* Alternate row colors */
+.CRStable tbody tr:nth-child(odd) td {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.CRStable   tbody tr:nth-child(odd):hover td {
+  background: var(--accent);
+}
+
+.CRStable tbody tr:nth-child(even) td {
+  background: #81878c;
+  color: var(--text-secondary);
+}
+
+.CRStable tbody tr:nth-child(even):hover td {
+  background: var(--accent);
+}
+
+/* Row hover effects */
+.CRStable tbody tr {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+
+.CRStable tbody tr:hover {
+  background: #549ee9;
+  color: #fff;
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 4px 8px rgba(33, 17, 17, 0.914), 0 8px 16px rgba(0, 0, 0, 0.1);
+  z-index: 5;
+  position: relative;
+}
+
+.CRStable tbody tr:hover td {
+  background: #549ee9 !important;
+  color: #fff;
+}
+
+/* Status Styles */
+.CRSstatus {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  display: inline-block;
+}
+
+
+
+
+
+.CRSnoRecord {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.CRSnoRecordText,
+.CRSnoActionText {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* Action Button */
+.CRSmanageBtn {
+  background: #1060af;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.CRSmanageBtn:hover {
+  background: #0d4d8c;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* No Clearance Requests Table */
+.CRSnoRequestsTable {
+  text-align: center;
+  padding: 60px 20px;
+  background: #f8f9fa;
+ 
+  color: #6c757d;
+}
+
+.CRSnoRequestsTable h3 {
+  margin: 0 0 10px 0;
+  color: #495057;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.CRSnoRequestsTable p {
+  margin: 0;
+  font-size: 14px;
+  color: #6c757d;
+}
+/* Add these styles to your existing ClearanceRecords.module.css */
+.CRSpaginationBtn:disabled,
+.CRSpaginationBtn.CRSdisabled {
+  opacity: 0.5;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+.CRSpaginationBtn:disabled:hover,
+.CRSpaginationBtn.CRSdisabled:hover {
+  color: white !important;
+  transform: none !important;
+}
+
+.CRSpaginationBtn.CRSactive:disabled,
+.CRSpaginationBtn.CRSactive.CRSdisabled {
+  background: #1060af;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+
+
+
+
+/* Pagination Styles */
+.CRSpaginationContainer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+  padding-right: 0px;
+}
+
+.CRSpaginationBtn {
+  background: #1060af;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.25s ease;
+
+}
+
+.CRSpaginationBtn:hover:not(:disabled) {
+  background: #1060af;
+  transform: scale(1.05);
+}
+
+.CRSpaginationBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.CRSpaginationBtn.CRSactive {
+  background: #74b1ef;
+  pointer-events: none;
+  transform: scale(1.15);
+}
+
+.CRSpaginationEllipsis {
+  padding: 8px 8px;
+  color: #666;
+  font-weight: bold;
+}
+
+/* No Data Message */
+.CRSnoData {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+  font-size: 16px;
+  background: #f8f9fa;
+
+  margin: 20px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .CRStopControls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+  }
+
+  .CRStableHeader {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .CRSsummary {
+    flex-direction: column;
+  }
+
+  .CRSsummaryCard {
+    min-width: auto;
+  }
+
+  .CRStable {
+    font-size: 12px;
+  }
+
+  .CRStable th,
+  .CRStable td {
+    padding: 10px 8px;
+  }
+
+  .CRSpaginationContainer {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .CRStable {
+    font-size: 11px;
+  }
+
+  .CRStable th,
+  .CRStable td {
+    padding: 8px 6px;
+  }
+
+  .CRSstatus {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .CRSmanageBtn {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+}

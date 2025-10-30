@@ -1,0 +1,444 @@
+/* LeaveRecords.module.css */
+
+/* Base Styles */
+
+/* Filter and Search Controls */
+.leaveFilterStatus,
+.leaveFilterType,
+.leaveSearchBar {
+  padding: 8px 12px;
+  margin-left: 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.456);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.25s ease;
+  width: 130px;
+ 
+}
+
+.leaveFilterStatus:hover,
+.leaveFilterType:hover,
+.leaveSearchBar:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+}
+
+.leaveFilterStatus:focus,
+.leaveFilterType:focus,
+.leaveSearchBar:focus {
+  border-color: #3e76e6;
+  box-shadow: 0 0 0 3px rgba(62, 118, 230, 0.3);
+}
+
+.leaveFilterStatus,
+.leaveFilterType {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 24 24'><path fill='%23848484' d='M7 10l5 5 5-5H7z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 32px;
+  
+}
+
+/* Top Controls */
+.leaveTopControls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 20px;
+  gap: 15px;
+    margin-top: -5px;
+
+}
+
+.leaveTableHeader {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+
+}
+
+.leaveTableHeader select,
+.leaveTableHeader input {
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+  
+}
+
+.leaveTableHeader input {
+  width: 250px;
+}
+
+.leaveTableHeader select:focus,
+.leaveTableHeader input:focus {
+  border-color: #1060af;
+  box-shadow: 0 0 6px rgba(16, 96, 175, 0.2);
+}
+
+/* Summary Cards */
+.leaveSummary {
+  display: flex;
+  gap: 20px;
+  margin: 20px;
+  flex-wrap: wrap;
+}
+
+.leaveSummaryCard {
+  flex: 1;
+  min-width: 150px;
+  padding: 20px;
+  border-radius: 12px;
+  color: #fff;
+  text-align: center;
+ box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  border: none;
+}
+
+.leaveSummaryCard:hover {
+  transform: translateY(-4px);
+
+}
+
+.leaveSummaryCard.leaveActive {
+  border: 3px solid #fff;
+  transform: translateY(-6px) scale(1.05);
+}
+
+.leaveTotal {
+  background: linear-gradient(135deg, #1060af, #529ae1);
+}
+
+.leavePending {
+  background: linear-gradient(135deg, #ff9800, #ffb74d);
+}
+
+.leaveApproved {
+  background: linear-gradient(135deg, #4caf50, #81c784);
+}
+
+.leaveRejected {
+  background: linear-gradient(135deg, #f44336, #e57373);
+}
+
+.leaveSummaryCard h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.leaveSummaryCard p {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* Table Container */
+.leaveTableContainer {
+  width: 100%;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+/* Table Styles */
+.leaveTable {
+    width: 101%;
+    padding: 20px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+    margin-left: -5px;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    text-align: center;
+  position: relative;
+  top: 0vh;
+  box-shadow: 0 5px 4px rgba(16, 95, 175, 0.597);
+}
+
+.leaveTable thead tr {
+  background: #529ae1;
+}
+
+.leaveTable th {
+  padding: 14px 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: #000000;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.leaveTable tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #000000;
+  color: #333;
+  transition: background 0.25s ease;
+}
+
+/* Alternate row colors */
+.leaveTable tbody tr:nth-child(odd) td {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.leaveTable tbody tr:nth-child(odd):hover td {
+  background: var(--accent);
+}
+
+.leaveTable tbody tr:nth-child(even) td {
+  background: #81878c;
+  color: var(--text-secondary);
+}
+
+.leaveTable tbody tr:nth-child(even):hover td {
+  background: var(--accent);
+}
+
+/* Row hover effects */
+.leaveTable tbody tr {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+
+.leaveTable tbody tr:hover {
+  background: #549ee9;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.leaveTable tbody tr:hover td {
+  background: #549ee9 !important;
+  color: #fff;
+}
+
+/* Status Styles */
+.status {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  display: inline-block;
+}
+
+.pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.approved {
+  background: #d1edff;
+  color: #0c5460;
+}
+
+.rejected {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.noRecord {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.noRecordText,
+.noActionText {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* Action Button */
+.manageBtn {
+  background: #1060af;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.manageBtn:hover {
+  background: #0d4d8c;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* No Leave Requests Table */
+.leaveNoRequestsTable {
+  text-align: center;
+  padding: 60px 20px;
+  background: #f8f9fa;
+ 
+  color: #6c757d;
+}
+
+.leaveNoRequestsTable h3 {
+  margin: 0 0 10px 0;
+  color: #495057;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.leaveNoRequestsTable p {
+  margin: 0;
+  font-size: 14px;
+  color: #6c757d;
+}
+  .leavePaginationContainer,.leaveTopPagination {
+    justify-content: flex-end;
+  }
+
+/* Add these styles to your existing LeaveRecords.module.css */
+.leavePaginationBtn:disabled,
+.leavePaginationBtn.leaveDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.leavePaginationBtn:disabled:hover,
+.leavePaginationBtn.leaveDisabled:hover {
+  color: white !important;
+  transform: none !important;
+}
+
+.leavePaginationBtn.leaveActive:disabled,
+.leavePaginationBtn.leaveActive.leaveDisabled {
+  background: #74B1EF;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+
+
+
+  /* Pagination Styles */
+  .leavePaginationContainer {
+  display: flex;
+  position: relative;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+  bottom: 5px;
+  gap: 10px;
+  padding-right: 10px;
+
+  }
+
+.leavePaginationBtn {
+  background: #1060af;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.25s ease;
+
+}
+
+.leavePaginationBtn:hover:not(:disabled) {
+  background: #1060af;
+  transform: scale(1.05);
+}
+
+.leavePaginationBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed!important;
+  transform: none;
+}
+
+.leavePaginationBtn.leaveActive {
+  background: #74b1ef;
+  pointer-events: none;
+  transform: scale(1.15);
+}
+
+.leavePaginationEllipsis {
+  padding: 8px 8px;
+  color: #666;
+  font-weight: bold;
+}
+
+/* No Data Message */
+.noData {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+  font-size: 16px;
+  background: #f8f9fa;
+
+  margin: 20px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .leaveTopControls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+  }
+
+  .leaveTableHeader {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .leaveSummary {
+    flex-direction: column;
+  }
+
+  .leaveSummaryCard {
+    min-width: auto;
+  }
+
+  .leaveTable {
+    font-size: 12px;
+  }
+
+  .leaveTable th,
+  .leaveTable td {
+    padding: 10px 8px;
+  }
+
+  .leavePaginationContainer {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .leaveTable {
+    font-size: 11px;
+  }
+
+  .leaveTable th,
+  .leaveTable td {
+    padding: 8px 6px;
+  }
+
+  .status {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .manageBtn {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+}
