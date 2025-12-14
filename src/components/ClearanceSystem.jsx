@@ -1,23 +1,17 @@
 import React, { useState, useEffect } from "react";
-import {
-  getAll,
-  addRecord,
-  updateRecord,
-  STORE_CLEARANCE,
-  STORE_PERSONNEL,
-} from "./db.jsx";
 import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import styles from "./ClearanceSystem.module.css";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
+import { supabase } from "../lib/supabaseClient"; // Import your Supabase client
 
 const ClearanceSystem = () => {
   const { isSidebarCollapsed } = useSidebar();
   const [clearanceRequests, setClearanceRequests] = useState([]);
   const [filteredRequests, setFilteredRequests] = useState([]);
   const [personnelList, setPersonnelList] = useState([]);
-  const [currentPage, setCurrentPage] = useState();
+  const [currentPage, setCurrentPage] = useState(1);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showInitiateModal, setShowInitiateModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -26,13 +20,15 @@ const ClearanceSystem = () => {
     search: "",
   });
   const [newClearance, setNewClearance] = useState({
-    employee: "",
+    personnel_id: "",
+    employee_name: "",
     type: "",
   });
+  const [loading, setLoading] = useState(false);
 
   const rowsPerPage = 5;
 
-  // Load data
+  // Load data from Supabase
   useEffect(() => {
     loadClearanceRequests();
     loadPersonnel();
@@ -45,20 +41,71 @@ const ClearanceSystem = () => {
 
   const loadClearanceRequests = async () => {
     try {
-      const data = (await getAll(STORE_CLEARANCE)) || [];
-      const sortedData = data.sort((a, b) => (b.id || 0) - (a.id || 0));
-      setClearanceRequests(sortedData);
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("clearance_requests")
+        .select(`
+          *,
+          personnel:personnel_id (
+            first_name,
+            middle_name,
+            last_name,
+            username,
+            rank,
+            badge_number
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      // Format the data
+      const formattedData = (data || []).map(request => {
+        const personnel = request.personnel || {};
+        const employeeName = `${personnel.first_name || ''} ${personnel.middle_name || ''} ${personnel.last_name || ''}`.replace(/\s+/g, ' ').trim();
+        
+        return {
+          id: request.id,
+          personnel_id: request.personnel_id,
+          employee: employeeName || 'Unknown',
+          username: personnel.username || '',
+          rank: personnel.rank || '',
+          badge_number: personnel.badge_number || '',
+          type: request.type,
+          status: request.status,
+          date: request.created_at ? new Date(request.created_at).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          }) : '',
+          remarks: request.remarks,
+          approved_by: request.approved_by,
+          approved_at: request.approved_at,
+          created_at: request.created_at,
+          updated_at: request.updated_at
+        };
+      });
+
+      setClearanceRequests(formattedData);
     } catch (err) {
-      console.error("[clearance] loadClearanceRequests error", err);
+      console.error("Error loading clearance requests:", err);
+      alert("Failed to load clearance requests");
+    } finally {
+      setLoading(false);
     }
   };
 
   const loadPersonnel = async () => {
     try {
-      const data = (await getAll(STORE_PERSONNEL)) || [];
-      setPersonnelList(data);
+      const { data, error } = await supabase
+        .from("personnel")
+        .select("id, first_name, middle_name, last_name, username, rank, badge_number")
+        .order("last_name", { ascending: true });
+
+      if (error) throw error;
+      setPersonnelList(data || []);
     } catch (err) {
-      console.error("[clearance] loadPersonnel error", err);
+      console.error("Error loading personnel:", err);
     }
   };
 
@@ -70,7 +117,8 @@ const ClearanceSystem = () => {
         (req.employee || "")
           .toLowerCase()
           .includes(filters.search.toLowerCase()) ||
-        (req.type || "").toLowerCase().includes(filters.search.toLowerCase());
+        (req.type || "").toLowerCase().includes(filters.search.toLowerCase()) ||
+        (req.username || "").toLowerCase().includes(filters.search.toLowerCase());
       return statusMatch && searchMatch;
     });
     setFilteredRequests(filtered);
@@ -89,137 +137,165 @@ const ClearanceSystem = () => {
     startIndex + rowsPerPage
   );
 
-const renderPaginationButtons = () => {
-  const pageCount = Math.max(1, Math.ceil(filteredRequests.length / rowsPerPage));
-  const hasNoData = filteredRequests.length === 0;
+  const renderPaginationButtons = () => {
+    const pageCount = Math.max(1, Math.ceil(filteredRequests.length / rowsPerPage));
+    const hasNoData = filteredRequests.length === 0;
 
-  const buttons = [];
+    const buttons = [];
 
-  // Previous button
-  buttons.push(
-    <button
-      key="prev"
-      className={`${styles.clearancePaginationBtn} ${
-        hasNoData ? styles.clearanceDisabled : ""
-      }`}
-      disabled={currentPage === 1 || hasNoData}
-      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-    >
-      Previous
-    </button>
-  );
-
-  // Always show first page
-  buttons.push(
-    <button
-      key={1}
-      className={`${styles.clearancePaginationBtn} ${
-        1 === currentPage ? styles.clearanceActive : ""
-      } ${hasNoData ? styles.clearanceDisabled : ""}`}
-      onClick={() => setCurrentPage(1)}
-      disabled={hasNoData}
-    >
-      1
-    </button>
-  );
-
-  // Show ellipsis after first page if needed
-  if (currentPage > 3) {
+    // Previous button
     buttons.push(
-      <span key="ellipsis1" className={styles.clearancePaginationEllipsis}>
-        ...
-      </span>
+      <button
+        key="prev"
+        className={`${styles.clearancePaginationBtn} ${
+          hasNoData ? styles.clearanceDisabled : ""
+        }`}
+        disabled={currentPage === 1 || hasNoData}
+        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+      >
+        Previous
+      </button>
     );
-  }
 
-  // Show pages around current page (max 5 pages total including first and last)
-  let startPage = Math.max(2, currentPage - 1);
-  let endPage = Math.min(pageCount - 1, currentPage + 1);
+    // Always show first page
+    buttons.push(
+      <button
+        key={1}
+        className={`${styles.clearancePaginationBtn} ${
+          1 === currentPage ? styles.clearanceActive : ""
+        } ${hasNoData ? styles.clearanceDisabled : ""}`}
+        onClick={() => setCurrentPage(1)}
+        disabled={hasNoData}
+      >
+        1
+      </button>
+    );
 
-  // Adjust if we're near the beginning
-  if (currentPage <= 3) {
-    endPage = Math.min(pageCount - 1, 4);
-  }
+    // Show ellipsis after first page if needed
+    if (currentPage > 3) {
+      buttons.push(
+        <span key="ellipsis1" className={styles.clearancePaginationEllipsis}>
+          ...
+        </span>
+      );
+    }
 
-  // Adjust if we're near the end
-  if (currentPage >= pageCount - 2) {
-    startPage = Math.max(2, pageCount - 3);
-  }
+    // Show pages around current page (max 5 pages total including first and last)
+    let startPage = Math.max(2, currentPage - 1);
+    let endPage = Math.min(pageCount - 1, currentPage + 1);
 
-  // Generate middle page buttons
-  for (let i = startPage; i <= endPage; i++) {
-    if (i > 1 && i < pageCount) {
+    // Adjust if we're near the beginning
+    if (currentPage <= 3) {
+      endPage = Math.min(pageCount - 1, 4);
+    }
+
+    // Adjust if we're near the end
+    if (currentPage >= pageCount - 2) {
+      startPage = Math.max(2, pageCount - 3);
+    }
+
+    // Generate middle page buttons
+    for (let i = startPage; i <= endPage; i++) {
+      if (i > 1 && i < pageCount) {
+        buttons.push(
+          <button
+            key={i}
+            className={`${styles.clearancePaginationBtn} ${
+              i === currentPage ? styles.clearanceActive : ""
+            } ${hasNoData ? styles.clearanceDisabled : ""}`}
+            onClick={() => setCurrentPage(i)}
+            disabled={hasNoData}
+          >
+            {i}
+          </button>
+        );
+      }
+    }
+
+    // Show ellipsis before last page if needed
+    if (currentPage < pageCount - 2) {
+      buttons.push(
+        <span key="ellipsis2" className={styles.clearancePaginationEllipsis}>
+          ...
+        </span>
+      );
+    }
+
+    // Always show last page if there is more than 1 page
+    if (pageCount > 1) {
       buttons.push(
         <button
-          key={i}
+          key={pageCount}
           className={`${styles.clearancePaginationBtn} ${
-            i === currentPage ? styles.clearanceActive : ""
+            pageCount === currentPage ? styles.clearanceActive : ""
           } ${hasNoData ? styles.clearanceDisabled : ""}`}
-          onClick={() => setCurrentPage(i)}
+          onClick={() => setCurrentPage(pageCount)}
           disabled={hasNoData}
         >
-          {i}
+          {pageCount}
         </button>
       );
     }
-  }
 
-  // Show ellipsis before last page if needed
-  if (currentPage < pageCount - 2) {
-    buttons.push(
-      <span key="ellipsis2" className={styles.clearancePaginationEllipsis}>
-        ...
-      </span>
-    );
-  }
-
-  // Always show last page if there is more than 1 page
-  if (pageCount > 1) {
+    // Next button
     buttons.push(
       <button
-        key={pageCount}
+        key="next"
         className={`${styles.clearancePaginationBtn} ${
-          pageCount === currentPage ? styles.clearanceActive : ""
-        } ${hasNoData ? styles.clearanceDisabled : ""}`}
-        onClick={() => setCurrentPage(pageCount)}
-        disabled={hasNoData}
+          hasNoData ? styles.clearanceDisabled : ""
+        }`}
+        disabled={currentPage === pageCount || hasNoData}
+        onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))}
       >
-        {pageCount}
+        Next
       </button>
     );
-  }
 
-  // Next button
-  buttons.push(
-    <button
-      key="next"
-      className={`${styles.clearancePaginationBtn} ${
-        hasNoData ? styles.clearanceDisabled : ""
-      }`}
-      disabled={currentPage === pageCount || hasNoData}
-      onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))}
-    >
-      Next
-    </button>
-  );
-
-  return buttons;
-};
+    return buttons;
+  };
 
   // Status management
   const updateStatus = async (id, newStatus) => {
-    try {
-      const reqs = await getAll(STORE_CLEARANCE);
-      const req = reqs.find((r) => Number(r.id) === Number(id));
-      if (!req) return;
+  try {
+    const updateData = {
+      status: newStatus,
+      updated_at: new Date().toISOString()
+    };
 
-      req.status = newStatus;
-      await updateRecord(STORE_CLEARANCE, req);
-      await loadClearanceRequests();
-    } catch (err) {
-      console.error("[clearance] updateStatus error", err);
+    // If approved, add approval info
+    if (newStatus === "Completed") {
+      updateData.approved_by = "Administrator";
+      updateData.approved_at = new Date().toISOString();
+      
+      // Also update personnel status
+      const request = clearanceRequests.find(r => r.id === id);
+      if (request && request.personnel_id) {
+        await supabase
+          .from("personnel")
+          .update({ 
+            status: request.type === "Retirement" ? "Retired" : 
+                    request.type === "Resignation" ? "Resigned" :
+                    "Separated",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", request.personnel_id);
+      }
     }
-  };
+
+    const { error } = await supabase
+      .from("clearance_requests")
+      .update(updateData)
+      .eq("id", id);
+
+    if (error) throw error;
+
+    await loadClearanceRequests();
+    alert(`Status updated to ${newStatus}`);
+  } catch (err) {
+    console.error("Error updating status:", err);
+    alert("Failed to update status");
+  }
+};
 
   // View details
   const showDetails = (request) => {
@@ -230,48 +306,48 @@ const renderPaginationButtons = () => {
   // Initiate clearance
   const handleInitiateClearance = async (e) => {
     e.preventDefault();
-    const { employee, type } = newClearance;
+    const { personnel_id, type } = newClearance;
 
-    if (!employee || !type) {
+    if (!personnel_id || !type) {
       alert("Please select both Employee and Clearance Type.");
       return;
     }
 
     try {
-      const personnel = await getAll(STORE_PERSONNEL);
-      const emp = personnel.find(
-        (p) =>
-          `${p.first_name || ""} ${p.middle_name || ""} ${p.last_name || ""}`
-            .trim()
-            .toLowerCase() === employee.toLowerCase()
-      );
-
-      if (!emp) {
-        alert("Selected employee not found in personnel records.");
-        return;
-      }
-
+      setLoading(true);
+      
       const newRequest = {
-        id: Date.now(),
-        username: emp.username,
-        employee,
-        type,
+        personnel_id: personnel_id,
+        type: type,
         status: "Pending",
-        date: new Date().toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        }),
+        remarks: "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
-      await addRecord(STORE_CLEARANCE, newRequest);
-      setNewClearance({ employee: "", type: "" });
+      const { data, error } = await supabase
+        .from("clearance_requests")
+        .insert([newRequest])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Reset form
+      setNewClearance({
+        personnel_id: "",
+        employee_name: "",
+        type: ""
+      });
       setShowInitiateModal(false);
+      
       await loadClearanceRequests();
       alert("Clearance request initiated successfully!");
     } catch (err) {
-      console.error("[clearance] submitClearance error", err);
-      alert("Failed to submit clearance — check console.");
+      console.error("Error submitting clearance:", err);
+      alert("Failed to submit clearance request.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -279,26 +355,19 @@ const renderPaginationButtons = () => {
     return (status || "").toLowerCase().replace(/\s+/g, "-");
   };
 
-  const FloatingLabelSelect = ({
-    id,
-    label,
-    value,
-    onChange,
-    required = false,
-    options = [],
-  }) => (
-    <div className={styles.clearanceFloatingLabel}>
-      <select id={id} value={value} onChange={onChange} required={required}>
-        <option value="" disabled></option>
-        {options.map((option) => (
-          <option key={option.value || option} value={option.value || option}>
-            {option.label || option}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={id}>{label}</label>
-    </div>
-  );
+  // Handle employee selection change
+  const handleEmployeeChange = (e) => {
+    const personnel_id = e.target.value;
+    const selectedPersonnel = personnelList.find(p => p.id === personnel_id);
+    
+    setNewClearance({
+      ...newClearance,
+      personnel_id: personnel_id,
+      employee_name: selectedPersonnel ? 
+        `${selectedPersonnel.first_name || ''} ${selectedPersonnel.middle_name || ''} ${selectedPersonnel.last_name || ''}`.replace(/\s+/g, ' ').trim() : 
+        ''
+    });
+  };
 
   return (
     <div className={styles.clearanceSystem}>
@@ -310,6 +379,7 @@ const renderPaginationButtons = () => {
 
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <h1>Clearance System</h1>
+        
         {/* Filter & Search */}
         <div className={styles.clearanceFilterSearchWrapper}>
           <div className={styles.clearanceFilterGroup}>
@@ -330,45 +400,56 @@ const renderPaginationButtons = () => {
             <input
               type="text"
               id={styles.clearanceSearchInput}
-              placeholder="Search by employee or type..."
+              placeholder="Search by employee, type, or username..."
               value={filters.search}
               onChange={(e) => handleFilterChange("search", e.target.value)}
             />
           </div>
         </div>
+        
         <div style={{ marginBottom: "15px" }}>
           <button
             className={styles.clearanceActionsBtn}
             onClick={() => setShowInitiateModal(true)}
+            disabled={loading}
           >
-            Initiate Clearance
+            {loading ? "Loading..." : "Initiate Clearance"}
           </button>
         </div>
+        
         {/* Pagination */}
         <div
           className={`${styles.clearancePaginationContainer} ${styles.clearanceTopPagination}`}
         >
           {renderPaginationButtons()}
         </div>
-        {/* Initiate Clearance Button */}
+        
         {/* Table */}
         <div id={styles.clearanceTableContainer}>
           <table className={styles.clearanceTable}>
             <thead>
               <tr>
                 <th>Request Date</th>
-                <th>Employee</th>
+                <th>Employee Name</th>
+                <th>Username</th>
                 <th>Clearance Type</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedData.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: "center", padding: "40px" }}>
+                    Loading clearance requests...
+                  </td>
+                </tr>
+              ) : paginatedData.length > 0 ? (
                 paginatedData.map((req) => (
                   <tr key={req.id}>
                     <td>{req.date || ""}</td>
                     <td>{req.employee || ""}</td>
+                    <td>{req.username || ""}</td>
                     <td>{req.type || ""}</td>
                     <td>
                       <span
@@ -383,14 +464,16 @@ const renderPaginationButtons = () => {
                       {req.status === "Pending" ? (
                         <>
                           <button
-                            id={styles.clearanceApprove}
+                            className={styles.clearanceApprove}
                             onClick={() => updateStatus(req.id, "Completed")}
+                            disabled={loading}
                           >
                             Approve
                           </button>
                           <button
-                            className={styles.clearanceRejects}
+                            className={styles.clearanceReject}
                             onClick={() => updateStatus(req.id, "Rejected")}
+                            disabled={loading}
                           >
                             Reject
                           </button>
@@ -409,7 +492,7 @@ const renderPaginationButtons = () => {
               ) : (
                 <tr>
                   <td
-                    colSpan="8"
+                    colSpan="6"
                     style={{ textAlign: "center", padding: "40px" }}
                   >
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>
@@ -473,6 +556,14 @@ const renderPaginationButtons = () => {
                         {selectedRequest.employee}
                       </span>
                     </div>
+                    <div className={styles.clearanceModalDetailItemDetails}>
+                      <span className={styles.clearanceModalLabelDetails}>
+                        Username:{" "}
+                      </span>
+                      <span className={styles.clearanceModalValueDetails}>
+                        {selectedRequest.username || "N/A"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -495,10 +586,29 @@ const renderPaginationButtons = () => {
                         Request Date:{" "}
                       </span>
                       <span className={styles.clearanceModalValueDetailsDate}>
-                        {" "}
                         {selectedRequest.date}
                       </span>
                     </div>
+                    {selectedRequest.approved_by && (
+                      <div className={styles.clearanceModalDetailItemDetails}>
+                        <span className={styles.clearanceModalLabelDetails}>
+                          Approved By:{" "}
+                        </span>
+                        <span className={styles.clearanceModalValueDetails}>
+                          {selectedRequest.approved_by}
+                        </span>
+                      </div>
+                    )}
+                    {selectedRequest.remarks && (
+                      <div className={styles.clearanceModalDetailItemDetails}>
+                        <span className={styles.clearanceModalLabelDetails}>
+                          Remarks:{" "}
+                        </span>
+                        <span className={styles.clearanceModalValueDetails}>
+                          {selectedRequest.remarks}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -530,7 +640,7 @@ const renderPaginationButtons = () => {
         </div>
       )}
 
-      {/* Sidebar Overlay */}
+      {/* Initiate Clearance Modal */}
       {showInitiateModal && (
         <div
           className={styles.clearanceRightSidebarOverlay}
@@ -562,29 +672,27 @@ const renderPaginationButtons = () => {
                   <select
                     id={styles.clearanceEmployeeSelect}
                     required
-                    value={newClearance.employee}
-                    onChange={(e) =>
-                      setNewClearance((prev) => ({
-                        ...prev,
-                        employee: e.target.value,
-                      }))
-                    }
+                    value={newClearance.personnel_id}
+                    onChange={handleEmployeeChange}
+                    disabled={loading}
                   >
-                    <option value="" disabled></option>
+                    <option value="">Select Employee</option>
                     {personnelList.map((emp) => (
                       <option
                         key={emp.id}
-                        value={`${emp.first_name || ""} ${
-                          emp.middle_name || ""
-                        } ${emp.last_name || ""}`.trim()}
+                        value={emp.id}
                       >
-                        {`${emp.first_name || ""} ${emp.middle_name || ""} ${
-                          emp.last_name || ""
-                        }`.trim()}
+                        {`${emp.first_name || ''} ${emp.middle_name || ''} ${emp.last_name || ''}`.replace(/\s+/g, ' ').trim()} 
+                        {emp.username ? ` (${emp.username})` : ''}
                       </option>
                     ))}
                   </select>
                   <h4>Select Employee</h4>
+                  {newClearance.employee_name && (
+                    <div className={styles.selectedEmployee}>
+                      Selected: {newClearance.employee_name}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -603,13 +711,16 @@ const renderPaginationButtons = () => {
                         type: e.target.value,
                       }))
                     }
+                    disabled={loading}
                   >
-                    <option value="" disabled></option>
+                    <option value="">Select Clearance Type</option>
                     <option value="Resignation">Resignation</option>
                     <option value="Retirement">Retirement</option>
                     <option value="Equipment Completion">
                       Equipment Completion
                     </option>
+                    <option value="Transfer">Transfer</option>
+                    <option value="Promotion">Promotion</option>
                   </select>
                   <h4>Select Clearance Type</h4>
                 </div>
@@ -617,12 +728,18 @@ const renderPaginationButtons = () => {
 
               {/* Actions */}
               <div className={styles.clearanceSidebarActions}>
-                <button type="submit" className={styles.clearanceSubmitBtn}>
-                  Submit Clearance
+                <button 
+                  type="submit" 
+                  className={styles.clearanceSubmitBtn}
+                  disabled={loading}
+                >
+                  {loading ? "Submitting..." : "Submit Clearance"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowInitiateModal(false)}
+                  className={styles.clearanceCancelBtn}
+                  disabled={loading}
                 >
                   Cancel
                 </button>

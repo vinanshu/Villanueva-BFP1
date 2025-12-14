@@ -16,6 +16,130 @@
   border-color: #3e76e6;
     box-shadow: 0 0 0 3px rgba(62,118,230,0.3);
   }
+  /* Barcode styles */
+.barcodeCell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.barcodeText {
+  font-family: 'Courier New', monospace;
+  background-color: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.barcodeViewBtn,
+.barcodeDownloadBtn {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.barcodeViewBtn:hover,
+.barcodeDownloadBtn:hover {
+  background-color: #45a049;
+}
+
+.barcodeDownloadBtn {
+  background-color: #2196F3;
+}
+
+.barcodeDownloadBtn:hover {
+  background-color: #0b7dda;
+}
+
+/* Barcode Modal */
+.barcodeModalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.barcodeModal {
+  background-color: white;
+  border-radius: 8px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.barcodeModalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.barcodeModalClose {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+}
+
+.barcodeModalClose:hover {
+  color: #333;
+}
+
+.barcodeModalContent {
+  padding: 20px;
+}
+
+.barcodeContainer {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.barcodeInfo {
+  margin-bottom: 15px;
+}
+
+.barcodeInfo h4 {
+  margin: 0 0 5px 0;
+  color: #333;
+}
+
+.barcodeInfo p {
+  margin: 0;
+  color: #666;
+  font-family: 'Courier New', monospace;
+}
+
+.barcodeModalActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.barcodeCloseBtn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.barcodeCloseBtn:hover {
+  background-color: #5a6268;
+}
 
   label[for="inventoryFilterStatus"]{
       font-size: 14px;

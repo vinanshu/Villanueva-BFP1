@@ -4,26 +4,15 @@ import Hamburger from "./Hamburger";
 import styles from "./EmployeeLeaveDashboard.module.css";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
-
-// Import your actual database functions - REMOVED getCurrentUser
-import {
-  openDB,
-  STORE_PERSONNEL,
-  STORE_LEAVE,
-  getLeaveRequests,
-  updateRecord,
-  deleteRecord,
-  getPersonnelList,
-} from "./db"; // Adjust the import path as needed
+import { supabase } from "../lib/supabaseClient";
 
 const EmployeeLeaveDashboard = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [employee, setEmployee] = useState(null);
   const [leaveData, setLeaveData] = useState({
-    leaveCounts: {},
+    leaveCounts: { vacation: 0, sick: 0, emergency: 0 },
     userRequests: [],
   });
-  const [cachedPersonnel, setCachedPersonnel] = useState([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -31,7 +20,7 @@ const EmployeeLeaveDashboard = () => {
   const [loading, setLoading] = useState(true);
   const { isSidebarCollapsed } = useSidebar();
 
-  // Table and pagination states (UPDATED with filter card functionality)
+  // Table and pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
@@ -41,27 +30,39 @@ const EmployeeLeaveDashboard = () => {
 
   // Date formatting helper
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    if (!dateString) return "N/A";
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch (error) {
+      return "Invalid Date";
+    }
   };
 
   // Calculate days between dates
   const calculateDays = (start, end) => {
-    return (
-      Math.ceil((new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24)) + 1
-    );
+    if (!start || !end) return 0;
+    try {
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      const diffTime = Math.abs(endDate - startDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays + 1; // Inclusive of both start and end dates
+    } catch (error) {
+      return 0;
+    }
   };
 
   // Monthly leave accrual
   const accrueMonthlyLeave = useCallback(async (emp) => {
-    if (!emp) return emp;
+    if (!emp || !emp.id) return emp;
 
     const now = new Date();
-    if (emp.lastAccrual) {
-      const last = new Date(emp.lastAccrual);
+    if (emp.last_accrual) {
+      const last = new Date(emp.last_accrual);
       if (
         last.getFullYear() === now.getFullYear() &&
         last.getMonth() === now.getMonth()
@@ -72,91 +73,153 @@ const EmployeeLeaveDashboard = () => {
 
     const updatedEmployee = {
       ...emp,
-      earnedVacation: Math.min((emp.earnedVacation || 0) + 1.25, 15),
-      earnedSick: Math.min((emp.earnedSick || 0) + 1, 10),
-      earnedEmergency: Math.min((emp.earnedEmergency || 0) + 0.5, 5),
-      lastAccrual: now.toISOString(),
+      earned_vacation: Math.min((emp.earned_vacation || 0) + 1.25, 15),
+      earned_sick: Math.min((emp.earned_sick || 0) + 1, 10),
+      earned_emergency: Math.min((emp.earned_emergency || 0) + 0.5, 5),
+      last_accrual: now.toISOString(),
+      updated_at: now.toISOString(),
     };
 
-    await updateRecord(STORE_PERSONNEL, updatedEmployee);
-    return updatedEmployee;
+    try {
+      const { error } = await supabase
+        .from("personnel")
+        .update(updatedEmployee)
+        .eq("id", emp.id);
+
+      if (error) throw error;
+      return updatedEmployee;
+    } catch (error) {
+      console.error("Error accruing monthly leave:", error);
+      return emp;
+    }
   }, []);
 
   // Fetch leave data
-  const getLeaveData = useCallback(async (user) => {
+  const getLeaveData = useCallback(async (username) => {
     try {
-      const allLeaves = await getLeaveRequests();
-      const userRequests = allLeaves.filter((r) => r.username === user);
+      if (!username) {
+        console.error("No username provided for getLeaveData");
+        return { leaveCounts: { vacation: 0, sick: 0, emergency: 0 }, userRequests: [] };
+      }
 
+      // First, get the personnel record for this username
+      const { data: personnelData, error: personnelError } = await supabase
+        .from("personnel")
+        .select("id, username")
+        .eq("username", username)
+        .single();
+
+      if (personnelError) {
+        console.error("Error fetching personnel data:", personnelError);
+        return { leaveCounts: { vacation: 0, sick: 0, emergency: 0 }, userRequests: [] };
+      }
+
+      // Fetch leave requests for this personnel_id
+      const { data: userRequests, error } = await supabase
+        .from("leave_requests")
+        .select("*")
+        .eq("personnel_id", personnelData.id)
+        .order("date_of_filing", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching leave requests:", error);
+        return { leaveCounts: { vacation: 0, sick: 0, emergency: 0 }, userRequests: [] };
+      }
+
+      // Calculate leave counts for APPROVED requests only
       const leaveCounts = { vacation: 0, sick: 0, emergency: 0 };
-      userRequests.forEach((req) => {
+      (userRequests || []).forEach((req) => {
         if (req.status === "Approved") {
-          const days =
-            parseInt(req.numDays) || calculateDays(req.startDate, req.endDate);
-          if (req.leaveType === "Vacation") leaveCounts.vacation += days;
-          if (req.leaveType === "Sick") leaveCounts.sick += days;
-          if (req.leaveType === "Emergency") leaveCounts.emergency += days;
+          const days = req.num_days || calculateDays(req.start_date, req.end_date);
+          if (req.leave_type === "Vacation") leaveCounts.vacation += days;
+          if (req.leave_type === "Sick") leaveCounts.sick += days;
+          if (req.leave_type === "Emergency") leaveCounts.emergency += days;
         }
       });
 
       return {
         leaveCounts,
-        userRequests: userRequests.sort(
-          (a, b) => new Date(b.dateOfFiling) - new Date(a.dateOfFiling)
-        ),
+        userRequests: userRequests || [],
       };
     } catch (error) {
-      console.error("Error fetching leave data:", error);
-      return { leaveCounts: {}, userRequests: [] };
+      console.error("Error in getLeaveData:", error);
+      return { leaveCounts: { vacation: 0, sick: 0, emergency: 0 }, userRequests: [] };
     }
   }, []);
 
-  // Get current user from session storage
+  // Get current user from session
   const getCurrentUserFromSession = async () => {
     try {
+      // Try localStorage first
       const storedUser = localStorage.getItem("currentUser");
       if (storedUser) {
-        return JSON.parse(storedUser);
+        const userData = JSON.parse(storedUser);
+        return userData.username || userData.email || null;
       }
 
+      // Try sessionStorage
       const sessionUser = sessionStorage.getItem("currentUser");
       if (sessionUser) {
-        return JSON.parse(sessionUser);
+        const userData = JSON.parse(sessionUser);
+        return userData.username || userData.email || null;
       }
 
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction("session", "readonly");
-        const store = tx.objectStore("session");
-        const request = store.get("currentUser");
+      // Try Supabase auth session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        // Get the username from personnel table using email
+        const { data: personnel } = await supabase
+          .from("personnel")
+          .select("username")
+          .eq("email", session.user.email)
+          .single();
+        
+        return personnel?.username || session.user.email;
+      }
 
-        request.onsuccess = () => {
-          const session = request.result;
-          resolve(session ? session.value : null);
-        };
-
-        request.onerror = () => reject(request.error);
-      });
+      return null;
     } catch (error) {
       console.error("Error getting current user:", error);
       return null;
     }
   };
 
+  // Fetch personnel data
+  const getPersonnelData = useCallback(async (username) => {
+    try {
+      const { data, error } = await supabase
+        .from("personnel")
+        .select("*")
+        .eq("username", username)
+        .single();
+
+      if (error) {
+        console.error("Error fetching personnel data:", error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error("Error in getPersonnelData:", error);
+      return null;
+    }
+  }, []);
+
   // Update leave cards
   const getLeaveCardData = (emp, lData) => {
-    if (!emp || !lData) return null;
+    if (!emp || !lData) {
+      return {
+        vacation: { earned: "0", value: "0 / 0", progress: 0 },
+        sick: { earned: "0", value: "0 / 0", progress: 0 },
+        emergency: { earned: "0", value: "0 / 0", progress: 0 },
+      };
+    }
 
+    // Calculate remaining leave days (earned minus approved days used)
     const remaining = {
-      vacation: Math.max(
-        0,
-        (emp.earnedVacation || 0) - lData.leaveCounts.vacation
-      ),
-      sick: Math.max(0, (emp.earnedSick || 0) - lData.leaveCounts.sick),
-      emergency: Math.max(
-        0,
-        (emp.earnedEmergency || 0) - lData.leaveCounts.emergency
-      ),
+      vacation: Math.max(0, (emp.earned_vacation || 0) - (lData.leaveCounts.vacation || 0)),
+      sick: Math.max(0, (emp.earned_sick || 0) - (lData.leaveCounts.sick || 0)),
+      emergency: Math.max(0, (emp.earned_emergency || 0) - (lData.leaveCounts.emergency || 0)),
     };
 
     const earned = { vacation: 1.25, sick: 1, emergency: 0.5 };
@@ -164,49 +227,34 @@ const EmployeeLeaveDashboard = () => {
     return {
       vacation: {
         earned: earned.vacation.toFixed(2),
-        value: `${remaining.vacation.toFixed(2)} / ${(
-          emp.earnedVacation || 0
-        ).toFixed(2)}`,
-        progress:
-          (emp.earnedVacation || 0) > 0
-            ? (remaining.vacation / (emp.earnedVacation || 1)) * 100
-            : 0,
+        value: `${remaining.vacation.toFixed(2)} / ${(emp.earned_vacation || 0).toFixed(2)}`,
+        progress: (emp.earned_vacation || 0) > 0 ? 
+          (remaining.vacation / (emp.earned_vacation || 1)) * 100 : 0,
       },
       sick: {
         earned: earned.sick.toFixed(2),
-        value: `${remaining.sick.toFixed(2)} / ${(emp.earnedSick || 0).toFixed(
-          2
-        )}`,
-        progress:
-          (emp.earnedSick || 0) > 0
-            ? (remaining.sick / (emp.earnedSick || 1)) * 100
-            : 0,
+        value: `${remaining.sick.toFixed(2)} / ${(emp.earned_sick || 0).toFixed(2)}`,
+        progress: (emp.earned_sick || 0) > 0 ? 
+          (remaining.sick / (emp.earned_sick || 1)) * 100 : 0,
       },
       emergency: {
         earned: earned.emergency.toFixed(2),
-        value: `${remaining.emergency.toFixed(2)} / ${(
-          emp.earnedEmergency || 0
-        ).toFixed(2)}`,
-        progress:
-          (emp.earnedEmergency || 0) > 0
-            ? (remaining.emergency / (emp.earnedEmergency || 1)) * 100
-            : 0,
+        value: `${remaining.emergency.toFixed(2)} / ${(emp.earned_emergency || 0).toFixed(2)}`,
+        progress: (emp.earned_emergency || 0) > 0 ? 
+          (remaining.emergency / (emp.earned_emergency || 1)) * 100 : 0,
       },
     };
   };
 
-  // Summary cards data (UPDATED with filter card functionality)
+  // Summary cards data - This calculates TOTALS from ALL requests
   const getSummaryCardsData = () => {
-    const totalRequests = leaveData.userRequests.length;
-    const approvedRequests = leaveData.userRequests.filter(
-      (req) => req.status === "Approved"
-    ).length;
-    const pendingRequests = leaveData.userRequests.filter(
-      (req) => req.status === "Pending"
-    ).length;
-    const rejectedRequests = leaveData.userRequests.filter(
-      (req) => req.status === "Rejected"
-    ).length;
+    const allRequests = leaveData.userRequests || [];
+    
+    // Count all requests by status
+    const approvedRequests = allRequests.filter(req => req.status === "Approved").length;
+    const pendingRequests = allRequests.filter(req => req.status === "Pending").length;
+    const rejectedRequests = allRequests.filter(req => req.status === "Rejected").length;
+    const totalRequests = allRequests.length;
 
     return {
       total: totalRequests,
@@ -216,11 +264,11 @@ const EmployeeLeaveDashboard = () => {
     };
   };
 
-  // Filtering logic (UPDATED with filter card functionality)
+  // Filtering logic
   const applyFilters = (requests) => {
     let filtered = [...requests];
 
-    // Card filter (NEW)
+    // First apply card filter (clicking on summary cards)
     if (currentFilterCard === "approved") {
       filtered = filtered.filter((req) => req.status === "Approved");
     } else if (currentFilterCard === "pending") {
@@ -228,64 +276,203 @@ const EmployeeLeaveDashboard = () => {
     } else if (currentFilterCard === "rejected") {
       filtered = filtered.filter((req) => req.status === "Rejected");
     }
+    // "total" card shows all requests, so no filtering
 
-    // Search filter
-    const s = search.trim().toLowerCase();
-    if (s) {
+    // Then apply search filter
+    const searchTerm = search.trim().toLowerCase();
+    if (searchTerm) {
       filtered = filtered.filter(
         (req) =>
-          req.leaveType.toLowerCase().includes(s) ||
-          req.status.toLowerCase().includes(s) ||
-          formatDate(req.startDate).toLowerCase().includes(s) ||
-          formatDate(req.endDate).toLowerCase().includes(s)
+          (req.leave_type?.toLowerCase() || "").includes(searchTerm) ||
+          (req.status?.toLowerCase() || "").includes(searchTerm) ||
+          formatDate(req.start_date).toLowerCase().includes(searchTerm) ||
+          formatDate(req.end_date).toLowerCase().includes(searchTerm)
       );
     }
 
-    // Status filter
+    // Then apply status filter from dropdown (if any)
     if (filterStatus) {
       filtered = filtered.filter(
-        (req) => req.status.toLowerCase() === filterStatus.toLowerCase()
+        (req) => req.status?.toLowerCase() === filterStatus.toLowerCase()
       );
     }
 
-    // Type filter
+    // Then apply type filter from dropdown (if any)
     if (filterType) {
       filtered = filtered.filter(
-        (req) => req.leaveType.toLowerCase() === filterType.toLowerCase()
+        (req) => req.leave_type?.toLowerCase() === filterType.toLowerCase()
       );
     }
 
     return filtered;
   };
 
-  // Card click handler (NEW)
+  // Card click handler
   const handleCardClick = (filter) => {
     if (currentFilterCard === filter) {
+      // If clicking the same card again, reset to show all
       setCurrentFilterCard("total");
     } else {
+      // Otherwise, apply the filter
       setCurrentFilterCard(filter);
     }
     setCurrentPage(1);
   };
 
-  // Pagination logic
-  const filteredRequests = applyFilters(leaveData.userRequests);
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredRequests.length / rowsPerPage)
-  );
-  const pageStart = (currentPage - 1) * rowsPerPage;
-  const paginatedRequests = filteredRequests.slice(
-    pageStart,
-    pageStart + rowsPerPage
+  // Update all stats
+  const updateAllStats = useCallback(
+    async (emp, lData) => {
+      const updatedEmployee = await accrueMonthlyLeave(emp);
+      if (updatedEmployee) {
+        setEmployee(updatedEmployee);
+      }
+      setLeaveData(lData);
+      setLoading(false);
+    },
+    [accrueMonthlyLeave]
   );
 
-  // Pagination buttons renderer (UPDATED with inventory-style classes)
+  // Event handlers
+  const handleEdit = (request) => {
+    setSelectedRequest(request);
+    setEditModalOpen(true);
+  };
+
+  const handleDelete = (id) => {
+    setDeleteId(id);
+    setDeleteModalOpen(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedRequest || !selectedRequest.id) return;
+
+    const formData = new FormData(e.target);
+    const updatedRequest = {
+      leave_type: formData.get("leaveType"),
+      start_date: formData.get("startDate"),
+      end_date: formData.get("endDate"),
+      num_days: calculateDays(
+        formData.get("startDate"),
+        formData.get("endDate")
+      ),
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await supabase
+        .from("leave_requests")
+        .update(updatedRequest)
+        .eq("id", selectedRequest.id)
+        .eq("status", "Pending"); // Only allow editing if still pending
+
+      if (error) throw error;
+
+      // Refresh data
+      const newLeaveData = await getLeaveData(currentUser);
+      const updatedEmployee = await getPersonnelData(currentUser);
+      
+      setEditModalOpen(false);
+      setSelectedRequest(null);
+      updateAllStats(updatedEmployee, newLeaveData);
+      
+      alert("Leave request updated successfully!");
+    } catch (error) {
+      console.error("Error updating leave request:", error);
+      alert("Error updating leave request. Only pending requests can be edited.");
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteId) return;
+
+    try {
+      // Check if the request is still pending before deleting
+      const { data: request, error: fetchError } = await supabase
+        .from("leave_requests")
+        .select("status")
+        .eq("id", deleteId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      if (request.status !== "Pending") {
+        alert("Only pending leave requests can be deleted.");
+        setDeleteModalOpen(false);
+        setDeleteId(null);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("leave_requests")
+        .delete()
+        .eq("id", deleteId);
+
+      if (error) throw error;
+
+      // Refresh data
+      const newLeaveData = await getLeaveData(currentUser);
+      const updatedEmployee = await getPersonnelData(currentUser);
+      
+      setDeleteModalOpen(false);
+      setDeleteId(null);
+      updateAllStats(updatedEmployee, newLeaveData);
+      
+      alert("Leave request deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting leave request:", error);
+      alert("Error deleting leave request. Please try again.");
+    }
+  };
+
+  // Initialize component
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        setLoading(true);
+
+        // Get current user from session
+        const user = await getCurrentUserFromSession();
+        if (!user) {
+          console.log("No user found in session, redirecting to login...");
+          window.location.href = "/login";
+          return;
+        }
+
+        setCurrentUser(user);
+
+        // Get personnel data
+        const emp = await getPersonnelData(user);
+        if (!emp) {
+          console.error("Employee not found for user:", user);
+          alert("Employee record not found. Please contact administrator.");
+          setLoading(false);
+          return;
+        }
+
+        // Get leave data
+        const lData = await getLeaveData(user);
+        
+        // Update stats with accrual
+        await updateAllStats(emp, lData);
+      } catch (error) {
+        console.error("Initialization error:", error);
+        setLoading(false);
+      }
+    };
+
+    initialize();
+  }, [getLeaveData, updateAllStats, getPersonnelData]);
+
+  // Pagination logic
+  const filteredRequests = applyFilters(leaveData.userRequests);
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / rowsPerPage));
+  const pageStart = (currentPage - 1) * rowsPerPage;
+  const paginatedRequests = filteredRequests.slice(pageStart, pageStart + rowsPerPage);
+
+  // Pagination buttons renderer
   const renderPaginationButtons = () => {
-    const pageCount = Math.max(
-      1,
-      Math.ceil(filteredRequests.length / rowsPerPage)
-    );
+    const pageCount = Math.max(1, Math.ceil(filteredRequests.length / rowsPerPage));
     const hasNoData = filteredRequests.length === 0;
 
     const buttons = [];
@@ -401,139 +588,6 @@ const EmployeeLeaveDashboard = () => {
     return buttons;
   };
 
-  // Update all stats
-  const updateAllStats = useCallback(
-    async (emp, lData) => {
-      const updatedEmployee = await accrueMonthlyLeave(emp);
-      if (updatedEmployee) {
-        setEmployee(updatedEmployee);
-      }
-      setLeaveData(lData);
-      setLoading(false);
-    },
-    [accrueMonthlyLeave]
-  );
-
-  // Event handlers
-  const handleEdit = (request) => {
-    setSelectedRequest(request);
-    setEditModalOpen(true);
-  };
-
-  const handleDelete = (id) => {
-    setDeleteId(id);
-    setDeleteModalOpen(true);
-  };
-
-  const handleEditSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedRequest) return;
-
-    const formData = new FormData(e.target);
-    const updatedRequest = {
-      ...selectedRequest,
-      leaveType: formData.get("leaveType"),
-      startDate: formData.get("startDate"),
-      endDate: formData.get("endDate"),
-      numDays: calculateDays(
-        formData.get("startDate"),
-        formData.get("endDate")
-      ),
-    };
-
-    try {
-      await updateRecord(STORE_LEAVE, updatedRequest);
-
-      const newLeaveData = await getLeaveData(currentUser);
-      const updatedEmployee = cachedPersonnel.find(
-        (p) => p.username === currentUser
-      );
-
-      if (updatedEmployee) {
-        await updateRecord(STORE_PERSONNEL, updatedEmployee);
-      }
-
-      setEditModalOpen(false);
-      setSelectedRequest(null);
-      updateAllStats(updatedEmployee, newLeaveData);
-    } catch (error) {
-      console.error("Error updating leave request:", error);
-      alert("Error updating leave request. Please try again.");
-    }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!deleteId) return;
-
-    try {
-      await deleteRecord(STORE_LEAVE, Number(deleteId));
-
-      const newLeaveData = await getLeaveData(currentUser);
-      const updatedEmployee = cachedPersonnel.find(
-        (p) => p.username === currentUser
-      );
-
-      if (updatedEmployee) {
-        await updateRecord(STORE_PERSONNEL, updatedEmployee);
-      }
-
-      setDeleteModalOpen(false);
-      setDeleteId(null);
-      updateAllStats(updatedEmployee, newLeaveData);
-    } catch (error) {
-      console.error("Error deleting leave request:", error);
-      alert("Error deleting leave request. Please try again.");
-    }
-  };
-
-  // Initialize component
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        setLoading(true);
-
-        // Get current user from session
-        const user = await getCurrentUserFromSession();
-        if (!user) {
-          console.log("No user found in session, redirecting to login...");
-          window.location.href = "/";
-          return;
-        }
-
-        setCurrentUser(user);
-        await openDB();
-
-        // Get personnel data
-        const personnelList = await getPersonnelList();
-        setCachedPersonnel(personnelList);
-
-        const emp = personnelList.find((p) => p.username === user);
-        if (!emp) {
-          console.error("Employee not found for user:", user);
-          setLoading(false);
-          return;
-        }
-
-        // Initialize leave balances if they don't exist
-        const employeeWithDefaults = {
-          ...emp,
-          earnedVacation: emp.earnedVacation || 0,
-          earnedSick: emp.earnedSick || 0,
-          earnedEmergency: emp.earnedEmergency || 0,
-          lastAccrual: emp.lastAccrual || new Date().toISOString(),
-        };
-
-        const lData = await getLeaveData(user);
-        await updateAllStats(employeeWithDefaults, lData);
-      } catch (error) {
-        console.error("Initialization error:", error);
-        setLoading(false);
-      }
-    };
-
-    initialize();
-  }, [getLeaveData, updateAllStats]);
-
   const leaveCardData = getLeaveCardData(employee, leaveData);
   const summaryCardsData = getSummaryCardsData();
 
@@ -542,10 +596,11 @@ const EmployeeLeaveDashboard = () => {
       <div className="appELD">
         <EmployeeSidebar />
         <Hamburger />
-        <main
-          className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}
-        >
-         
+        <main className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
+          <div className={styles.loadingContainer}>
+            <div className={styles.loadingSpinner}></div>
+            <p>Loading dashboard...</p>
+          </div>
         </main>
       </div>
     );
@@ -561,47 +616,58 @@ const EmployeeLeaveDashboard = () => {
       <main className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <div className={styles.EMPLDdashboardHeader}>
           <h1>Employee Leave Dashboard</h1>
+          {employee && (
+            <p className={styles.welcomeMessage}>
+              Welcome, {employee.first_name} {employee.last_name}!
+            </p>
+          )}
         </div>
 
-        {/* Welcome Message */}
-      
-        {/* UPDATED: Summary Cards with Filter Functionality */}
+        {/* Summary Cards - These show TOTAL COUNTS */}
         <div className={styles.EMPLDsummaryCards}>
           <button
             className={`${styles.EMPLDsummaryCard} ${styles.EMPLDtotal} ${
               currentFilterCard === "total" ? styles.EMPLDactive : ""
             }`}
             onClick={() => handleCardClick("total")}
+            title="Click to show all requests"
           >
             <h3>Total Requests</h3>
             <p>{summaryCardsData.total}</p>
+            <small>All statuses combined</small>
           </button>
           <button
             className={`${styles.EMPLDsummaryCard} ${styles.EMPLDapproved} ${
               currentFilterCard === "approved" ? styles.EMPLDactive : ""
             }`}
             onClick={() => handleCardClick("approved")}
+            title={`Click to filter: ${currentFilterCard === "approved" ? "Show all" : "Show approved only"}`}
           >
             <h3>Approved</h3>
             <p>{summaryCardsData.approved}</p>
+            <small>{currentFilterCard === "approved" ? "Currently filtered" : "Click to filter"}</small>
           </button>
           <button
             className={`${styles.EMPLDsummaryCard} ${styles.EMPLDpending} ${
               currentFilterCard === "pending" ? styles.EMPLDactive : ""
             }`}
             onClick={() => handleCardClick("pending")}
+            title={`Click to filter: ${currentFilterCard === "pending" ? "Show all" : "Show pending only"}`}
           >
             <h3>Pending</h3>
             <p>{summaryCardsData.pending}</p>
+            <small>{currentFilterCard === "pending" ? "Currently filtered" : "Click to filter"}</small>
           </button>
           <button
             className={`${styles.EMPLDsummaryCard} ${styles.EMPLDrejected} ${
               currentFilterCard === "rejected" ? styles.EMPLDactive : ""
             }`}
             onClick={() => handleCardClick("rejected")}
+            title={`Click to filter: ${currentFilterCard === "rejected" ? "Show all" : "Show rejected only"}`}
           >
             <h3>Rejected</h3>
             <p>{summaryCardsData.rejected}</p>
+            <small>{currentFilterCard === "rejected" ? "Currently filtered" : "Click to filter"}</small>
           </button>
         </div>
 
@@ -620,8 +686,7 @@ const EmployeeLeaveDashboard = () => {
               ></div>
             </div>
             <p>
-              <span>{leaveCardData?.vacation.value || "0 / 0"}</span> days
-              remaining
+              <span>{leaveCardData?.vacation.value || "0 / 0"}</span> days remaining
             </p>
           </div>
 
@@ -655,18 +720,27 @@ const EmployeeLeaveDashboard = () => {
               ></div>
             </div>
             <p>
-              <span>{leaveCardData?.emergency.value || "0 / 0"}</span> days
-              remaining
+              <span>{leaveCardData?.emergency.value || "0 / 0"}</span> days remaining
             </p>
           </div>
         </div>
 
         {/* Recent Leave Requests */}
         <div className={styles.EMPLDtableSectionHeader}>
-          <h2>Recent Leave Requests</h2>
+          <h2>
+            Recent Leave Requests
+            {currentFilterCard !== "total" && (
+              <span className={styles.activeFilterBadge}>
+                Filtered by: {currentFilterCard.charAt(0).toUpperCase() + currentFilterCard.slice(1)}
+              </span>
+            )}
+          </h2>
+          <div className={styles.tableInfo}>
+            Showing {filteredRequests.length} of {leaveData.userRequests.length} total requests
+          </div>
         </div>
 
-        {/* UPDATED: Top Controls (Filters and Search) */}
+        {/* Filters and Search */}
         <div className={styles.EMPLDtopControls}>
           <div className={styles.EMPLDtableHeader}>
             <select
@@ -710,14 +784,12 @@ const EmployeeLeaveDashboard = () => {
           </div>
         </div>
 
-        {/* UPDATED: Top Pagination */}
-        <div
-          className={`${styles.EMPLDpaginationContainer} ${styles.EMPLDtopPagination}`}
-        >
+        {/* Top Pagination */}
+        <div className={`${styles.EMPLDpaginationContainer} ${styles.EMPLDtopPagination}`}>
           {renderPaginationButtons()}
         </div>
 
-        {/* UPDATED: Table Container with Inventory Styling */}
+        {/* Table */}
         <div className={styles.EMPLDtableContainer}>
           <table className={styles.EMPLDtable}>
             <thead>
@@ -734,15 +806,15 @@ const EmployeeLeaveDashboard = () => {
               {paginatedRequests.length > 0 ? (
                 paginatedRequests.map((request) => (
                   <tr key={request.id}>
-                    <td>{request.leaveType}</td>
-                    <td>{formatDate(request.startDate)}</td>
-                    <td>{formatDate(request.endDate)}</td>
-                    <td>{request.numDays}</td>
+                    <td>{request.leave_type}</td>
+                    <td>{formatDate(request.start_date)}</td>
+                    <td>{formatDate(request.end_date)}</td>
+                    <td>{request.num_days}</td>
                     <td
                       className={
-                        request.status.toLowerCase() === "approved"
+                        request.status?.toLowerCase() === "approved"
                           ? styles.EMPLDstatusApproved
-                          : request.status.toLowerCase() === "pending"
+                          : request.status?.toLowerCase() === "pending"
                           ? styles.EMPLDstatusPending
                           : styles.EMPLDstatusRejected
                       }
@@ -754,12 +826,16 @@ const EmployeeLeaveDashboard = () => {
                         <button
                           className={styles.EMPLDbtnEdit}
                           onClick={() => handleEdit(request)}
+                          disabled={request.status !== "Pending"}
+                          title={request.status !== "Pending" ? "Only pending requests can be edited" : "Edit"}
                         >
                           Edit
                         </button>
                         <button
                           className={styles.EMPLDbtnDelete}
                           onClick={() => handleDelete(request.id)}
+                          disabled={request.status !== "Pending"}
+                          title={request.status !== "Pending" ? "Only pending requests can be deleted" : "Delete"}
                         >
                           Delete
                         </button>
@@ -769,10 +845,7 @@ const EmployeeLeaveDashboard = () => {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan="8"
-                    className={styles.EMPLDNoRequestsTable}
-                  >
+                  <td colSpan="6" className={styles.EMPLDNoRequestsTable}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>
                       📋
                     </div>
@@ -787,12 +860,12 @@ const EmployeeLeaveDashboard = () => {
                       No Leave Requests Found
                     </h3>
                     <p style={{ fontSize: "14px", color: "#999" }}>
-                      {search ||
-                      filterStatus ||
-                      filterType ||
-                      currentFilterCard !== "total"
+                      {search || filterStatus || filterType || currentFilterCard !== "total"
                         ? "Try adjusting your filters or search terms"
                         : "You haven't submitted any leave requests yet"}
+                    </p>
+                    <p style={{ fontSize: "12px", color: "#666", marginTop: "8px" }}>
+                      Current filter: {currentFilterCard} | Status: {filterStatus || "Any"} | Type: {filterType || "Any"}
                     </p>
                   </td>
                 </tr>
@@ -801,99 +874,97 @@ const EmployeeLeaveDashboard = () => {
           </table>
         </div>
 
-
+        {/* Bottom Pagination */}
+        <div className={styles.EMPLDpaginationContainer}>
+          {renderPaginationButtons()}
+        </div>
 
         {/* Edit Modal */}
-        <div
-          className={`${styles.EMPLDmodal} ${
-            editModalOpen ? styles.EMPLDmodalOpen : ""
-          }`}
-        >
-          <div className={styles.EMPLDmodalContent}>
-            <span
-              className={styles.EMPLDclose}
-              onClick={() => setEditModalOpen(false)}
-            >
-              &times;
-            </span>
-            <h2>Edit Leave Request</h2>
-            <form onSubmit={handleEditSubmit}>
-              <input
-                type="hidden"
-                name="id"
-                value={selectedRequest?.id || ""}
-              />
-              <label>Leave Type</label>
-              <select
-                name="leaveType"
-                defaultValue={selectedRequest?.leaveType || ""}
-                required
+        {editModalOpen && selectedRequest && (
+          <div className={`${styles.EMPLDmodal} ${styles.EMPLDmodalOpen}`}>
+            <div className={styles.EMPLDmodalContent}>
+              <span
+                className={styles.EMPLDclose}
+                onClick={() => setEditModalOpen(false)}
               >
-                <option value="Vacation">Vacation</option>
-                <option value="Sick">Sick</option>
-                <option value="Emergency">Emergency</option>
-              </select>
-              <label>Start Date</label>
-              <input
-                type="date"
-                name="startDate"
-                defaultValue={selectedRequest?.startDate || ""}
-                required
-              />
-              <label>End Date</label>
-              <input
-                type="date"
-                name="endDate"
-                defaultValue={selectedRequest?.endDate || ""}
-                required
-              />
+                &times;
+              </span>
+              <h2>Edit Leave Request</h2>
+              <form onSubmit={handleEditSubmit}>
+                <label>Leave Type</label>
+                <select
+                  name="leaveType"
+                  defaultValue={selectedRequest.leave_type}
+                  required
+                >
+                  <option value="Vacation">Vacation</option>
+                  <option value="Sick">Sick</option>
+                  <option value="Emergency">Emergency</option>
+                </select>
+                <label>Start Date</label>
+                <input
+                  type="date"
+                  name="startDate"
+                  defaultValue={selectedRequest.start_date}
+                  required
+                />
+                <label>End Date</label>
+                <input
+                  type="date"
+                  name="endDate"
+                  defaultValue={selectedRequest.end_date}
+                  required
+                  min={selectedRequest.start_date}
+                />
+                <div className={styles.EMPLDmodalActions}>
+                  <button
+                    type="button"
+                    className={styles.EMPLDmodalCancel}
+                    onClick={() => setEditModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className={styles.EMPLDmodalSubmit}>
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Modal */}
+        {deleteModalOpen && (
+          <div className={`${styles.EMPLDmodal} ${styles.EMPLDmodalOpen}`}>
+            <div className={styles.EMPLDmodalContent}>
+              <span
+                className={styles.EMPLDclose}
+                onClick={() => setDeleteModalOpen(false)}
+              >
+                &times;
+              </span>
+              <h2>Confirm Delete</h2>
+              <p>Are you sure you want to delete this leave request?</p>
+              <p className={styles.warningText}>
+                <strong>Note:</strong> Only pending leave requests can be deleted.
+              </p>
               <div className={styles.EMPLDmodalActions}>
                 <button
-                  type="button"
                   className={styles.EMPLDmodalCancel}
-                  onClick={() => setEditModalOpen(false)}
+                  onClick={() => setDeleteModalOpen(false)}
                 >
                   Cancel
                 </button>
-                <button type="submit" className={styles.EMPLDmodalSubmit}>
-                  Save
+                <button
+                  className={styles.EMPLDconfirmDelete}
+                  onClick={handleDeleteConfirm}
+                >
+                  Delete
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-
-        {/* Delete Modal */}
-        <div
-          className={`${styles.EMPLDmodal} ${
-            deleteModalOpen ? styles.EMPLDmodalOpen : ""
-          }`}
-        >
-          <div className={styles.EMPLDmodalContent}>
-            <span
-              className={styles.EMPLDclose}
-              onClick={() => setDeleteModalOpen(false)}
-            >
-              &times;
-            </span>
-            <h2>Confirm Delete</h2>
-            <p>Are you sure you want to delete this leave request?</p>
-            <div className={styles.EMPLDmodalActions}>
-              <button
-                className={styles.EMPLDmodalCancel}
-                onClick={() => setDeleteModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className={styles.EMPLDconfirmDelete}
-                onClick={handleDeleteConfirm}
-              >
-                Delete
-              </button>
             </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

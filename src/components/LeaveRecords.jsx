@@ -1,11 +1,10 @@
-// LeaveRecords.jsx
 import React, { useState, useEffect } from "react";
-import { STORE_PERSONNEL, STORE_LEAVE, getAll } from "./db";
 import styles from "./LeaveRecords.module.css";
 import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
+import { supabase } from "../lib/supabaseClient";
 
 const LeaveRecords = () => {
   const [leaveData, setLeaveData] = useState([]);
@@ -23,76 +22,95 @@ const LeaveRecords = () => {
 
   useEffect(() => {
     loadLeaveRecords();
+    
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('leave-records-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'leave_requests' }, 
+        () => {
+          loadLeaveRecords();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadLeaveRecords = async () => {
     try {
-      const personnelList = await getAll(STORE_PERSONNEL);
-      const leaveRequests = await getAll(STORE_LEAVE);
+      setLoading(true);
+      console.log("Loading leave records from Supabase...");
 
-      // console.log("=== DEBUG LEAVE RECORDS ===");
-      // console.log("Total Personnel:", personnelList.length);
-      // console.log("Total Leave Requests:", leaveRequests.length);
-      //  console.log("Leave Requests Data:", leaveRequests);
+      // Fetch leave requests with personnel information
+      const { data: leaveRequests, error: leaveError } = await supabase
+        .from("leave_requests")
+        .select(`
+          *,
+          personnel:personnel_id (
+            id,
+            username,
+            first_name,
+            last_name,
+            rank,
+            badge_number,
+            station
+          )
+        `)
+        .order("date_of_filing", { ascending: false });
 
-      // Check if there are any leave requests
-      if (leaveRequests.length === 0) {
-        //    console.log("No leave requests found in database");
+      if (leaveError) {
+        console.error("Error loading leave requests:", leaveError);
         setNoData(true);
         setLoading(false);
         return;
       }
 
-      const processedData = [];
-      let matchedRequests = 0;
+      console.log("Total Leave Requests:", leaveRequests?.length || 0);
 
-      // Only process personnel who have leave requests
-      personnelList.forEach((person) => {
-        const requests = leaveRequests.filter(
-          (req) => req.username === person.username
-        );
+      // Check if there are any leave requests
+      if (!leaveRequests || leaveRequests.length === 0) {
+        console.log("No leave requests found in database");
+        setNoData(true);
+        setLoading(false);
+        setLeaveData([]);
+        return;
+      }
 
-        //     console.log( `Person: ${person.username}, Matching requests: ${requests.length}`   );
-
-        // Only add to processedData if the person has at least one leave request
-        if (requests.length > 0) {
-          matchedRequests += requests.length;
-          requests.forEach((req) => {
-            const status = req.status || "Pending";
-            processedData.push({
-              id: `${person.id}-${req.dateOfFiling}`,
-              fullName: `${person.first_name} ${person.last_name}`,
-              rank: person.rank,
-              dateOfFiling: req.dateOfFiling,
-              leaveType: req.leaveType,
-              startDate: req.startDate,
-              endDate: req.endDate,
-              numDays: req.numDays,
-              status: status,
-              username: person.username,
-            });
-          });
-        }
+      // Process the data to match the expected structure
+      const processedData = leaveRequests.map((req) => {
+        const personnel = req.personnel || {};
+        const status = req.status || "Pending";
+        
+        return {
+          id: req.id,
+          personnel_id: req.personnel_id,
+          fullName: `${personnel.first_name || ""} ${personnel.last_name || ""}`.trim() || "Unknown",
+          rank: personnel.rank || "N/A",
+          dateOfFiling: req.date_of_filing ? new Date(req.date_of_filing).toLocaleDateString() : "N/A",
+          leaveType: req.leave_type || "N/A",
+          startDate: req.start_date ? new Date(req.start_date).toLocaleDateString() : "N/A",
+          endDate: req.end_date ? new Date(req.end_date).toLocaleDateString() : "N/A",
+          numDays: req.num_days || 0,
+          status: status,
+          username: req.username || personnel.username || "Unknown",
+          station: personnel.station || "N/A",
+          created_at: req.created_at,
+          updated_at: req.updated_at
+        };
       });
 
-      // console.log("=== PROCESSING RESULTS ===");
-      // console.log("Total processed records:", processedData.length);
-      //  console.log("Matched requests:", matchedRequests);
-      //  console.log("Final processed data:", processedData);
+      console.log("Processed records:", processedData.length);
+      console.log("Sample processed data:", processedData[0]);
 
       setLeaveData(processedData);
-      setLoading(false);
-
-      // Set noData if no processed records
-      if (processedData.length === 0) {
-        //    console.log("No matching records found after processing");
-        setNoData(true);
-      } else {
-        setNoData(false);
-      }
+      setNoData(false);
     } catch (err) {
       console.error("[leaveRecords] error loading", err);
       setNoData(true);
+    } finally {
       setLoading(false);
     }
   };
@@ -117,7 +135,7 @@ const LeaveRecords = () => {
 
     filtered = filtered.filter((i) => {
       const text =
-        `${i.fullName} ${i.rank} ${i.dateOfFiling} ${i.leaveType} ${i.startDate} ${i.endDate} ${i.numDays} ${i.status}`.toLowerCase();
+        `${i.fullName} ${i.rank} ${i.station} ${i.dateOfFiling} ${i.leaveType} ${i.startDate} ${i.endDate} ${i.numDays} ${i.status}`.toLowerCase();
       const statusMatch =
         !statusFilter || (i.status || "").toLowerCase().includes(statusFilter);
       const typeMatch =
@@ -137,7 +155,6 @@ const LeaveRecords = () => {
   const pageStart = (currentPage - 1) * rowsPerPage;
   const paginated = filteredLeaveData.slice(pageStart, pageStart + rowsPerPage);
 
-  // Pagination function
   // Pagination function
   const renderPaginationButtons = () => {
     const pageCount = Math.max(
@@ -185,7 +202,7 @@ const LeaveRecords = () => {
       );
     }
 
-    // Show pages around current page (max 5 pages total including first and last)
+    // Show pages around current page
     let startPage = Math.max(2, currentPage - 1);
     let endPage = Math.min(pageCount - 1, currentPage + 1);
 
@@ -258,6 +275,7 @@ const LeaveRecords = () => {
 
     return buttons;
   };
+
   // Summary numbers - only count actual leave requests
   const totalItems = leaveData.length;
   const pendingItems = leaveData.filter(
@@ -288,19 +306,38 @@ const LeaveRecords = () => {
     return statusMap[status.toLowerCase()] || styles.pending;
   };
 
-  const handleManageClick = (username, dateOfFiling) => {
-    if (dateOfFiling && dateOfFiling !== "-") {
-      const manageUrl = `/leaveManagement?username=${encodeURIComponent(
-        username
-      )}&date=${encodeURIComponent(dateOfFiling)}`;
-      window.location.href = manageUrl;
+  const handleManageClick = (username, dateOfFiling, personnelId) => {
+    // Navigate to leave management page with parameters
+    const params = new URLSearchParams();
+    if (username) params.append('username', username);
+    if (dateOfFiling) params.append('date', dateOfFiling);
+    if (personnelId) params.append('personnel_id', personnelId);
+    
+    const manageUrl = `/leaveManagement?${params.toString()}`;
+    window.location.href = manageUrl;
+  };
+
+  // Format date helper function
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch (error) {
+      return "Invalid Date";
     }
   };
 
   if (loading) {
     return (
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <p>Loading leave records...</p>
+        <div className={styles.loadingContainer}>
+          <div className={styles.loadingSpinner}></div>
+          <p>Loading leave records...</p>
+        </div>
       </div>
     );
   }
@@ -327,10 +364,10 @@ const LeaveRecords = () => {
                 setCurrentPage(1);
               }}
             >
-              <option value="">All Status </option>
-              <option>Pending</option>
-              <option>Approved</option>
-              <option>Rejected</option>
+              <option value="">All Status</option>
+              <option value="Pending">Pending</option>
+              <option value="Approved">Approved</option>
+              <option value="Rejected">Rejected</option>
             </select>
 
             <select
@@ -342,11 +379,11 @@ const LeaveRecords = () => {
               }}
             >
               <option value="">All Leave Types</option>
-              <option>Vacation</option>
-              <option>Sick</option>
-              <option>Emergency</option>
-              <option>Maternity</option>
-              <option>Paternity</option>
+              <option value="Vacation">Vacation</option>
+              <option value="Sick">Sick</option>
+              <option value="Emergency">Emergency</option>
+              <option value="Maternity">Maternity</option>
+              <option value="Paternity">Paternity</option>
             </select>
 
             <input
@@ -423,7 +460,7 @@ const LeaveRecords = () => {
               </tr>
             </thead>
             <tbody>
-              {paginated.length === 0 ? (
+              {noData || paginated.length === 0 ? (
                 <tr>
                   <td colSpan="9" className={styles.leaveNoRequestsTable}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>
@@ -438,10 +475,10 @@ const LeaveRecords = () => {
                   <tr key={record.id}>
                     <td>{record.fullName}</td>
                     <td>{record.rank}</td>
-                    <td>{record.dateOfFiling}</td>
+                    <td>{formatDate(record.dateOfFiling)}</td>
                     <td>{record.leaveType}</td>
-                    <td>{record.startDate}</td>
-                    <td>{record.endDate}</td>
+                    <td>{formatDate(record.startDate)}</td>
+                    <td>{formatDate(record.endDate)}</td>
                     <td>{record.numDays}</td>
                     <td>
                       <span
@@ -458,7 +495,8 @@ const LeaveRecords = () => {
                         onClick={() =>
                           handleManageClick(
                             record.username,
-                            record.dateOfFiling
+                            record.dateOfFiling,
+                            record.personnel_id
                           )
                         }
                       >
@@ -470,6 +508,11 @@ const LeaveRecords = () => {
               )}
             </tbody>
           </table>
+
+          {/* Bottom Pagination */}
+          <div className={styles.leavePaginationContainer}>
+            {renderPaginationButtons()}
+          </div>
         </div>
       </div>
     </div>

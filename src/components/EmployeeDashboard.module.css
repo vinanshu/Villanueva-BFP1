@@ -18,6 +18,234 @@
   position: relative;
   overflow: hidden;
 }
+/* Add these styles to EmployeeDashboard.module.css */
+
+/* Barcode Modal Styles */
+.barcodeModalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.barcodeModal {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.barcodeModalHeader {
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.barcodeModalHeader h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.barcodeModalClose {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.barcodeModalClose:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.barcodeModalContent {
+  padding: 20px;
+}
+
+.barcodeInfo {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.barcodeInfo h4 {
+  margin: 0 0 8px 0;
+  color: #1f2937;
+  font-size: 1.1rem;
+}
+
+.barcodeInfo p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.barcodeCanvas {
+  display: block;
+  margin: 0 auto 20px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.barcodeModalActions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.barcodeDownloadBtn,
+.barcodeCloseBtn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  font-size: 0.9rem;
+}
+
+.barcodeDownloadBtn {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+}
+
+.barcodeDownloadBtn:hover {
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.barcodeCloseBtn {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.barcodeCloseBtn:hover {
+  background: #e5e7eb;
+}
+
+/* Barcode Cell in Table */
+.barcodeCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.barcodeText {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #1f2937;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+/* Equipment Actions */
+.equipmentActions {
+  display: flex;
+  gap: 8px;
+}
+
+.barcodeBtn {
+  background: #f3f4f6;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #6b7280;
+}
+
+.barcodeBtn:hover {
+  background: #e5e7eb;
+  color: #374151;
+  transform: translateY(-1px);
+}
+
+/* Action Buttons in Table */
+.actionButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.actionIcon {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.actionIcon:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* Equipment Item in Overview */
+.equipmentItem {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.equipmentItem:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.equipmentItem .equipmentInfo small {
+  display: block;
+  color: #6b7280;
+  font-size: 0.8rem;
+  margin-top: 2px;
+}
+
+/* Card Header Badge */
+.cardHeader .badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
 
 .statCard::before {
   content: '';

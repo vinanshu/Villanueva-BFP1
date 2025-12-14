@@ -6,9 +6,9 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import { AuthProvider } from "./components/AuthContext"; // Add this
+import { AuthProvider } from "./components/AuthContext";
 import { SidebarProvider } from "./components/SidebarContext";
-import ProtectedRoute from "./components/ProtectedRoute"; // Add this
+import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./components/Login";
 
 // Admin Components
@@ -26,29 +26,31 @@ import Promotion from "./components/Promotion";
 import RecruitmentPersonnel from "./components/RecruitmentPersonnel";
 import Trainings from "./components/Trainings";
 import Placement from "./components/Placement";
+import History from "./components/History";
 
+// Recruitment Components
+import RecruitmentDashboard from "./components/RecruitmentDashboard"; // You need to create this
 
+// Employee Components
 import EmployeeDashboard from "./components/EmployeeDashboard";
 import EmployeeLeaveDashboard from "./components/EmployeeLeaveDashboard";
 import EmployeeLeaveRequest from "./components/EmployeeLeaveRequest";
 
-import UserSwitcher from "./UserSwitcher"; // Temporary for testing
-
+// Inspector Components
 import InspectorDashboard from "./components/InspectorDashboard";
 import InspectorInventoryControl from "./components/InspectorInventoryControl";
 import InspectorEquipmentInspection from "./components/InspectorEquipmentInspection";
 import InspectorInspectionReport from "./components/InspectorInspectionReport";
 
+import UserSwitcher from "./UserSwitcher";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { HeadProvider } from "react-head";
-
 
 function App() {
   return (
     <AuthProvider>
       <UserSwitcher />
-      {/* Wrap with AuthProvider */}
       <SidebarProvider>
         <HeadProvider>
           <Router>
@@ -137,7 +139,7 @@ function App() {
                 }
               />
               <Route
-                path="/Promotion"
+                path="/promotion"
                 element={
                   <ProtectedRoute requiredRole="admin">
                     <Promotion />
@@ -169,9 +171,38 @@ function App() {
                 }
               />
               <Route
-                path="/inspectorDashboard"
+                path="/history"
                 element={
-                  <ProtectedRoute requiredRole="inspector">
+                  <ProtectedRoute requiredRole="admin">
+                    <History />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Recruitment Personnel routes */}
+              <Route
+                path="/recruitment"
+                element={
+                  <ProtectedRoute requiredRole="recruitment">
+                    <RecruitmentDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/recruitment/profile"
+                element={
+                  <ProtectedRoute requiredRole="recruitment">
+                    {/* Create a RecruitmentProfile component or reuse PersonnelProfile with different props */}
+                    <PersonnelProfile isRecruitment={true} />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Inspector routes */}
+              <Route
+                path="/InspectorDashboard"
+                element={
+                  <ProtectedRoute requiredRole="admin"> {/* Note: inspector logs in as admin role */}
                     <InspectorDashboard />
                   </ProtectedRoute>
                 }
@@ -179,7 +210,7 @@ function App() {
               <Route
                 path="/inspectorInventoryControl"
                 element={
-                  <ProtectedRoute requiredRole="inspector">
+                  <ProtectedRoute requiredRole="admin">
                     <InspectorInventoryControl />
                   </ProtectedRoute>
                 }
@@ -187,7 +218,7 @@ function App() {
               <Route
                 path="/inspectorEquipmentInspection"
                 element={
-                  <ProtectedRoute requiredRole="inspector">
+                  <ProtectedRoute requiredRole="admin">
                     <InspectorEquipmentInspection />
                   </ProtectedRoute>
                 }
@@ -195,11 +226,12 @@ function App() {
               <Route
                 path="/inspectorInspectionReport"
                 element={
-                  <ProtectedRoute requiredRole="inspector">
+                  <ProtectedRoute requiredRole="admin">
                     <InspectorInspectionReport />
                   </ProtectedRoute>
                 }
               />
+
               {/* Employee-only routes */}
               <Route
                 path="/employee"
@@ -225,6 +257,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+              {/* Fallback route */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
             <ToastContainer />

@@ -4,7 +4,7 @@ import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
-import { getAllPersonnel, updateRecord, STORE_PERSONNEL } from "./db";
+import { supabase } from "../lib/supabaseClient"; // Import your Supabase client
 
 const Placement = () => {
   const [personnel, setPersonnel] = useState([]);
@@ -20,7 +20,7 @@ const Placement = () => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editData, setEditData] = useState({ designation: "", station: "" });
 
-  // Load personnel data from IndexedDB on component mount
+  // Load personnel data from Supabase on component mount
   useEffect(() => {
     loadPersonnelData();
   }, []);
@@ -28,25 +28,28 @@ const Placement = () => {
   const loadPersonnelData = async () => {
     try {
       setLoading(true);
-      const personnelData = await getAllPersonnel();
+      
+      // Fetch personnel data from Supabase
+      const { data: personnelData, error } = await supabase
+        .from("personnel")
+        .select("*")
+        .order("last_name", { ascending: true });
+
+      if (error) {
+        console.error("Error loading personnel data from Supabase:", error);
+        throw error;
+      }
+
       console.log(
-        "Loaded personnel data from IndexedDB:",
-        personnelData.length,
+        "Loaded personnel data from Supabase:",
+        personnelData?.length || 0,
         "records"
       );
 
-      // Ensure date fields are properly formatted
-      const formattedPersonnel = personnelData.map((person) => ({
-        ...person,
-        // Convert Date objects to strings for display
-        date_hired: formatDateForDisplay(person.date_hired),
-        dateHired: formatDateForDisplay(person.dateHired),
-      }));
-
-      setPersonnel(formattedPersonnel);
+      setPersonnel(personnelData || []);
       setLoading(false);
     } catch (error) {
-      console.error("Error loading personnel data from IndexedDB:", error);
+      console.error("Error loading personnel data:", error);
       setLoading(false);
     }
   };
@@ -57,18 +60,41 @@ const Placement = () => {
 
     // If it's already a string, return it
     if (typeof dateValue === "string") {
+      // Try to format it nicely
+      try {
+        const date = new Date(dateValue);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
+        }
+      } catch {
+        // If parsing fails, return the original string
+      }
       return dateValue;
     }
 
     // If it's a Date object, format it
     if (dateValue instanceof Date) {
-      return dateValue.toISOString().split("T")[0]; // Returns YYYY-MM-DD format
+      return dateValue.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
     }
 
     // If it's a timestamp or other value, try to convert
     try {
       const date = new Date(dateValue);
-      return isNaN(date.getTime()) ? "N/A" : date.toISOString().split("T")[0];
+      return isNaN(date.getTime()) 
+        ? "N/A" 
+        : date.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
     } catch {
       return "N/A";
     }
@@ -78,19 +104,21 @@ const Placement = () => {
     if (!dateValue) return 0;
 
     let date;
-    if (dateValue instanceof Date) {
-      date = dateValue;
-    } else if (typeof dateValue === "string") {
-      date = new Date(dateValue);
-    } else {
-      date = new Date(dateValue);
+    try {
+      if (dateValue instanceof Date) {
+        date = dateValue;
+      } else {
+        date = new Date(dateValue);
+      }
+      
+      if (isNaN(date.getTime())) return 0;
+
+      const today = new Date();
+      const diff = today - date;
+      return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+    } catch {
+      return 0;
     }
-
-    if (isNaN(date.getTime())) return 0;
-
-    const today = new Date();
-    const diff = today - date;
-    return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
   };
 
   const handleEdit = (index) => {
@@ -112,18 +140,30 @@ const Placement = () => {
 
     try {
       const updatedPersonnel = [...personnel];
-      const personToUpdate = {
-        ...updatedPersonnel[index],
+      const personToUpdate = updatedPersonnel[index];
+
+      // Prepare update data
+      const updateData = {
         designation: designation.trim(),
         station: station.trim(),
         updated_at: new Date().toISOString(),
       };
 
-      // Update in IndexedDB
-      await updateRecord(STORE_PERSONNEL, personToUpdate);
+      // Update in Supabase
+      const { data, error } = await supabase
+        .from("personnel")
+        .update(updateData)
+        .eq("id", personToUpdate.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error updating personnel data in Supabase:", error);
+        throw error;
+      }
 
       // Update local state
-      updatedPersonnel[index] = personToUpdate;
+      updatedPersonnel[index] = data;
       setPersonnel(updatedPersonnel);
       setEditingIndex(null);
       setEditData({ designation: "", station: "" });
@@ -148,16 +188,20 @@ const Placement = () => {
   };
 
   const getFullName = (person) => {
-    // Handle both field naming conventions
-    const firstName = person.first_name || person.firstName || "";
-    const middleName = person.middle_name || person.middleName || "";
-    const lastName = person.last_name || person.lastName || "";
+    const firstName = person.first_name || "";
+    const middleName = person.middle_name || "";
+    const lastName = person.last_name || "";
     return `${firstName} ${middleName} ${lastName}`.trim() || "N/A";
   };
 
   // Get the date hired for calculations
   const getDateHired = (person) => {
-    return person.date_hired || person.dateHired;
+    return person.date_hired;
+  };
+
+  // Get the last promotion date
+  const getLastPromotionDate = (person) => {
+    return person.last_promoted || person.date_hired;
   };
 
   // Filtering & pagination logic
@@ -167,14 +211,14 @@ const Placement = () => {
     // Card filter
     if (currentFilterCard === "eligible") {
       filtered = filtered.filter((person) => {
-        const dateHired = getDateHired(person);
-        const years = calculateYears(dateHired);
+        const lastPromoted = getLastPromotionDate(person);
+        const years = calculateYears(lastPromoted);
         return years >= 2;
       });
     } else if (currentFilterCard === "not-eligible") {
       filtered = filtered.filter((person) => {
-        const dateHired = getDateHired(person);
-        const years = calculateYears(dateHired);
+        const lastPromoted = getLastPromotionDate(person);
+        const years = calculateYears(lastPromoted);
         return years < 2;
       });
     }
@@ -332,15 +376,11 @@ const Placement = () => {
   // Summary numbers
   const totalItems = personnel.length;
   const eligibleItems = personnel.filter((person) => {
-    const dateHired = getDateHired(person);
-    const years = calculateYears(dateHired);
+    const lastPromoted = getLastPromotionDate(person);
+    const years = calculateYears(lastPromoted);
     return years >= 2;
   }).length;
-  const notEligibleItems = personnel.filter((person) => {
-    const dateHired = getDateHired(person);
-    const years = calculateYears(dateHired);
-    return years < 2;
-  }).length;
+  const notEligibleItems = totalItems - eligibleItems;
 
   function handleCardClick(filter) {
     if (currentFilterCard === filter) {
@@ -354,7 +394,22 @@ const Placement = () => {
   if (loading) {
     return (
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <p>Loading personnel data...</p>
+        <div style={{ textAlign: "center", padding: "50px" }}>
+          <div style={{ fontSize: "48px", marginBottom: "16px" }}>👨‍🚒</div>
+          <h3
+            style={{
+              fontSize: "18px",
+              fontWeight: "600",
+              color: "#2b2b2b",
+              marginBottom: "8px",
+            }}
+          >
+            Loading Personnel Data
+          </h3>
+          <p style={{ fontSize: "14px", color: "#999" }}>
+            Please wait while we load placement information...
+          </p>
+        </div>
       </div>
     );
   }
@@ -381,14 +436,13 @@ const Placement = () => {
               }}
             >
               <option value="">All Ranks</option>
-              <option>Firefighter</option>
-              <option>Inspector</option>
-              <option>Investigator</option>
-              <option>Lieutenant</option>
-              <option>Captain</option>
-              <option>Battalion Chief</option>
-              <option>Deputy Chief</option>
-              <option>Chief</option>
+              <option>FO1</option>
+              <option>FO2</option>
+              <option>FO3</option>
+              <option>SFO1</option>
+              <option>SFO2</option>
+              <option>SFO3</option>
+              <option>SFO4</option>
             </select>
 
             <input
@@ -462,7 +516,9 @@ const Placement = () => {
                       👨‍🚒
                     </div>
                     <h3>No Personnel Records Found</h3>
-                    <p>There are no personnel records available yet.</p>
+                    <p>
+                      There are no personnel records matching your criteria.
+                    </p>
                   </td>
                 </tr>
               ) : (
@@ -470,8 +526,8 @@ const Placement = () => {
                   const globalIndex = personnel.findIndex(
                     (p) => p.id === person.id
                   );
-                  const dateHired = getDateHired(person);
-                  const years = calculateYears(dateHired);
+                  const lastPromoted = getLastPromotionDate(person);
+                  const years = calculateYears(lastPromoted);
                   const isEligible = years >= 2;
                   const isEditing = editingIndex === globalIndex;
 
@@ -510,7 +566,7 @@ const Placement = () => {
                         )}
                       </td>
                       <td>{years}</td>
-                      <td>{formatDateForDisplay(dateHired)}</td>
+                      <td>{formatDateForDisplay(lastPromoted)}</td>
                       <td>
                         <span
                           className={`${styles.PMTStatus} ${

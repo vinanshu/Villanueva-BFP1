@@ -1,15 +1,11 @@
 import React, { useState, useEffect } from "react";
 import styles from "./AwardsCommendations.module.css";
-//import { getAll } from "./db.js";
-//import Sidebar from "./Sidebar.jsx";
-//import Hamburger from "./Hamburger.jsx";
-//import { useSidebar } from "./SidebarContext.jsx";
-//import { Title, Meta } from "react-head";
-import { getAll } from "./db";
 import Sidebar from "./Sidebar";
 import Hamburger from "./Hamburger";
 import { useSidebar } from "./SidebarContext";
-import {Title, Meta} from "react-head"
+import { Title, Meta } from "react-head";
+import { supabase } from "../lib/supabaseClient"; // Add Supabase import
+
 const AwardsCommendations = () => {
   const [awards, setAwards] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,73 +20,100 @@ const AwardsCommendations = () => {
 
   const loadAwards = async () => {
     try {
-      const personnelList = await getAll("personnel");
-      const awardsData = [];
+      console.log("Loading awards from Supabase...");
+      
+      // Fetch personnel with their award documents
+      const { data: personnelList, error: personnelError } = await supabase
+        .from("personnel")
+        .select("*")
+        .order("last_name", { ascending: true });
 
-      personnelList.forEach((p) => {
-        const fullName = `${p.first_name || ""} ${p.middle_name || ""} ${
-          p.last_name || ""
-        }`.trim();
-        const rank = p.rank || "N/A";
-        const badge = p.badge_number || "N/A";
-        const documents = Array.isArray(p.documents) ? p.documents : [];
+      if (personnelError) {
+        console.error("Error loading personnel:", personnelError);
+        throw personnelError;
+      }
 
-        documents
-          .filter((doc) => doc.category === "Award/Commendation")
-          .forEach((doc) => {
-            const dateTime = doc.uploadedAt
-              ? new Date(doc.uploadedAt).toLocaleString()
-              : "N/A";
+      // Fetch all award/commendation documents
+      const { data: documentsData, error: documentsError } = await supabase
+        .from("personnel_documents")
+        .select("*")
+        .eq("category", "Award/Commendation")
+        .order("uploaded_at", { ascending: false });
 
-            // Determine award type based on document name or category
-            let awardType = "General";
-            const docName = doc.name?.toLowerCase() || "";
+      if (documentsError) {
+        console.error("Error loading documents:", documentsError);
+        throw documentsError;
+      }
 
-            if (docName.includes("medal") || docName.includes("medal of")) {
-              awardType = "Medal";
-            } else if (
-              docName.includes("commendation") ||
-              docName.includes("commendation")
-            ) {
-              awardType = "Commendation";
-            } else if (
-              docName.includes("certificate") ||
-              docName.includes("certificate of")
-            ) {
-              awardType = "Certificate";
-            } else if (
-              docName.includes("ribbon") ||
-              docName.includes("service ribbon")
-            ) {
-              awardType = "Ribbon";
-            } else if (
-              docName.includes("badge") ||
-              docName.includes("special badge")
-            ) {
-              awardType = "Badge";
-            }
-
-            awardsData.push({
-              id: `${p.id}-${doc.name}-${Date.now()}`,
-              fullName,
-              rank,
-              badgeNumber: badge,
-              awardName: doc.name,
-              awardType: awardType,
-              dateTime,
-              downloadUrl: doc.url,
-              fileName: doc.name,
-              personnelId: p.id,
-              rawDocument: doc,
-            });
-          });
+      // Create a map of personnel by ID for quick lookup
+      const personnelMap = {};
+      personnelList?.forEach(personnel => {
+        personnelMap[personnel.id] = personnel;
       });
 
-      console.log("Loaded awards data:", awardsData);
+      const awardsData = [];
+
+      // Process each award document
+      documentsData?.forEach(doc => {
+        const personnel = personnelMap[doc.personnel_id];
+        
+        if (!personnel) {
+          console.warn(`No personnel found for document ${doc.id}, personnel_id: ${doc.personnel_id}`);
+          return;
+        }
+
+        const fullName = `${personnel.first_name || ""} ${personnel.middle_name || ""} ${
+          personnel.last_name || ""
+        }`.trim();
+        const rank = personnel.rank || "N/A";
+        const badge = personnel.badge_number || "N/A";
+        
+        // Determine award type - use record_type if available, otherwise infer from name
+        let awardType = doc.record_type || "General";
+        
+        // If record_type is not set, infer from file name
+        if (!doc.record_type || doc.record_type === "General") {
+          const docName = doc.name?.toLowerCase() || "";
+          
+          if (docName.includes("medal") || docName.includes("medal of")) {
+            awardType = "Medal";
+          } else if (docName.includes("commendation")) {
+            awardType = "Commendation";
+          } else if (docName.includes("certificate") || docName.includes("certificate of")) {
+            awardType = "Certificate";
+          } else if (docName.includes("ribbon") || docName.includes("service ribbon")) {
+            awardType = "Ribbon";
+          } else if (docName.includes("badge") || docName.includes("special badge")) {
+            awardType = "Badge";
+          }
+        }
+
+        // Format date
+        const dateTime = doc.uploaded_at 
+          ? new Date(doc.uploaded_at).toLocaleString() 
+          : "N/A";
+
+        awardsData.push({
+          id: doc.id,
+          fullName,
+          rank,
+          badgeNumber: badge,
+          awardName: doc.name,
+          awardType: awardType,
+          dateTime,
+          downloadUrl: doc.file_url,
+          fileName: doc.name,
+          personnelId: doc.personnel_id,
+          rawDocument: doc,
+        });
+      });
+
+      console.log(`Loaded ${awardsData.length} awards from Supabase`);
       setAwards(awardsData);
       setLoading(false);
     } catch (error) {
       console.error("Error loading awards:", error);
+      setAwards([]);
       setLoading(false);
     }
   };
@@ -299,19 +322,12 @@ const AwardsCommendations = () => {
     try {
       console.log("Downloading award:", award.id, award.fileName);
 
-      if (award.rawDocument && award.rawDocument.url) {
-        // Use the blob URL if available
-        const link = document.createElement("a");
-        link.href = award.rawDocument.url;
-        link.download = award.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else if (award.downloadUrl) {
-        // Fallback to downloadUrl
+      if (award.downloadUrl) {
+        // Use the Supabase storage URL
         const link = document.createElement("a");
         link.href = award.downloadUrl;
         link.download = award.fileName;
+        link.target = "_blank"; // Open in new tab for better UX
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -329,16 +345,37 @@ const AwardsCommendations = () => {
 
     try {
       const date = new Date(dateTimeString);
-      return isNaN(date.getTime()) ? "N/A" : date.toLocaleString();
+      return isNaN(date.getTime()) 
+        ? "N/A" 
+        : date.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
     } catch {
       return "N/A";
     }
   };
 
+  // Add a refresh button handler
+  const handleRefresh = async () => {
+    setLoading(true);
+    await loadAwards();
+  };
+
   if (loading) {
     return (
-      <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <p>Loading awards and commendations...</p>
+      <div className={styles.ACSAppContainer}>
+        <Hamburger />
+        <Sidebar />
+        <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
+          <div className={styles.ACSLoading}>
+            <p>Loading awards and commendations...</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -351,7 +388,16 @@ const AwardsCommendations = () => {
       <Hamburger />
       <Sidebar />
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <h1 className={styles.ACSTitle}>Awards & Commendations</h1>
+        <div className={styles.ACSHeader}>
+          <h1 className={styles.ACSTitle}>Awards & Commendations</h1>
+          <button 
+            className={styles.ACSRefreshBtn} 
+            onClick={handleRefresh}
+            title="Refresh awards list"
+          >
+            🔄 Refresh
+          </button>
+        </div>
 
         {/* Top Controls */}
         <div className={styles.ACSTopControls}>
@@ -365,12 +411,12 @@ const AwardsCommendations = () => {
               }}
             >
               <option value="">All Award Types</option>
-              <option>Medal</option>
-              <option>Commendation</option>
-              <option>Certificate</option>
-              <option>Ribbon</option>
-              <option>Badge</option>
-              <option>General</option>
+              <option value="medal">Medal</option>
+              <option value="commendation">Commendation</option>
+              <option value="certificate">Certificate</option>
+              <option value="ribbon">Ribbon</option>
+              <option value="badge">Badge</option>
+              <option value="general">General</option>
             </select>
 
             <input
@@ -471,6 +517,13 @@ const AwardsCommendations = () => {
                     </div>
                     <h3>No Awards & Commendations Found</h3>
                     <p>There are no awards or commendations uploaded yet.</p>
+                    <button 
+                      className={styles.ACSRefreshBtn} 
+                      onClick={handleRefresh}
+                      style={{ marginTop: '20px' }}
+                    >
+                      Refresh List
+                    </button>
                   </td>
                 </tr>
               ) : (
@@ -479,7 +532,7 @@ const AwardsCommendations = () => {
                     <td>{award.fullName}</td>
                     <td>{award.rank}</td>
                     <td>{award.badgeNumber}</td>
-                    <td>{award.awardName}</td>
+                    <td className={styles.ACSAwardName}>{award.awardName}</td>
                     <td>
                       <span
                         className={`${styles.ACSStatus} ${
@@ -489,16 +542,12 @@ const AwardsCommendations = () => {
                         {award.awardType}
                       </span>
                     </td>
-                    <td>{formatDateTime(award.dateTime)}</td>
+                    <td className={styles.ACSDateTime}>{formatDateTime(award.dateTime)}</td>
                     <td>
                       <button
                         className={styles.ACSDownloadLink}
                         onClick={() => handleDownload(award)}
-                        style={{
-                          border: "none",
-                          cursor: "pointer",
-                          fontSize: "inherit",
-                        }}
+                        title={`Download ${award.awardName}`}
                       >
                         📥 Download
                       </button>
@@ -508,6 +557,19 @@ const AwardsCommendations = () => {
               )}
             </tbody>
           </table>
+
+          {paginated.length > 0 && (
+            <div className={styles.ACSPaginationContainer}>
+              {renderPaginationButtons()}
+            </div>
+          )}
+        </div>
+
+        {/* Info panel */}
+        <div className={styles.ACSInfoPanel}>
+          <p><strong>Total Records:</strong> {awards.length} awards</p>
+          <p><strong>Filtered:</strong> {filteredAwardsData.length} awards</p>
+          <p><strong>Current Page:</strong> {currentPage} of {totalPages}</p>
         </div>
       </div>
     </div>

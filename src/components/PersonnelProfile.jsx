@@ -1,11 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  STORE_PERSONNEL,
-  getAll,
-  updateRecord,
-  getPersonnelList,
-  addMedicalRecord,
-} from "./db";
 import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
@@ -13,6 +6,7 @@ import { Title, Meta } from "react-head";
 import styles from "./PersonnelProfile.module.css";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { supabase } from "../lib/supabaseClient";
 
 const PersonnelProfile = () => {
   const { isSidebarCollapsed } = useSidebar();
@@ -30,20 +24,18 @@ const PersonnelProfile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 6;
-  // Format date to display full month names
+
+  // Format date
   const formatDate = (dateString) => {
     if (!dateString || dateString.trim() === "") return "";
-
     try {
       const date = new Date(dateString);
-      if (isNaN(date.getTime())) {
-        return dateString; // Return original if invalid
-      }
-
+      if (isNaN(date.getTime())) return dateString;
       return date.toLocaleDateString("en-US", {
         year: "numeric",
         month: "long",
@@ -55,16 +47,12 @@ const PersonnelProfile = () => {
     }
   };
 
-  // Format timestamp to display like "Sep 29, 2025 9:00pm"
+  // Format timestamp
   const formatTimestamp = (dateString) => {
     if (!dateString || dateString.trim() === "") return "";
-
     try {
       const date = new Date(dateString);
-      if (isNaN(date.getTime())) {
-        return dateString; // Return original if invalid
-      }
-
+      if (isNaN(date.getTime())) return dateString;
       return date.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -78,81 +66,368 @@ const PersonnelProfile = () => {
       return dateString;
     }
   };
-  // Load personnel from IndexedDB
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const personnel = await getPersonnelList();
-        const updatedPersonnel = await syncMedicalRecordsToPersonnel(personnel);
-        setPersonnelList(updatedPersonnel);
-      } catch (error) {
-        console.error("Error loading personnel:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
 
-    loadData();
+  // Load personnel from Supabase
+  useEffect(() => {
+    loadPersonnel();
   }, []);
 
-  // Sync medical records back to personnel documents
-  const syncMedicalRecordsToPersonnel = async (personnelList) => {
+  const loadPersonnel = async () => {
     try {
-      const medicalRecords = await getAll("medicalRecords");
-      if (!medicalRecords || medicalRecords.length === 0) {
-        return personnelList;
-      }
+      setIsLoading(true);
+      
+      // Fetch personnel with their documents
+      const { data: personnelData, error: personnelError } = await supabase
+        .from("personnel")
+        .select("*")
+        .order("last_name", { ascending: true });
 
-      let hasUpdates = false;
-      const updatedPersonnel = [...personnelList];
+      if (personnelError) throw personnelError;
 
-      for (const medicalRecord of medicalRecords) {
-        const personnelIndex = updatedPersonnel.findIndex(
-          (p) => p.id === medicalRecord.personnelId
-        );
+      // Fetch all documents for all personnel
+      const { data: documentsData, error: documentsError } = await supabase
+        .from("personnel_documents")
+        .select("*")
+        .order("uploaded_at", { ascending: false });
 
-        if (personnelIndex !== -1) {
-          const personnel = updatedPersonnel[personnelIndex];
-          const documents = personnel.documents || [];
-          const existingDoc = documents.find(
-            (doc) =>
-              doc.name === medicalRecord.documentName &&
-              doc.category === "Medical Record"
-          );
+      if (documentsError) throw documentsError;
 
-          if (!existingDoc) {
-            documents.push({
-              name: medicalRecord.documentName,
-              category: "Medical Record",
-              url: medicalRecord.blobUrl || "#",
-              uploadedAt: medicalRecord.uploadDate,
-              recordType: medicalRecord.recordType || "General",
-            });
-
-            updatedPersonnel[personnelIndex] = {
-              ...personnel,
-              documents: documents,
-            };
-            hasUpdates = true;
-          }
+      // Group documents by personnel_id
+      const documentsByPersonnel = {};
+      documentsData?.forEach(doc => {
+        if (!documentsByPersonnel[doc.personnel_id]) {
+          documentsByPersonnel[doc.personnel_id] = [];
         }
-      }
+        documentsByPersonnel[doc.personnel_id].push(doc);
+      });
 
-      if (hasUpdates) {
-        for (const personnel of updatedPersonnel) {
-          await updateRecord(STORE_PERSONNEL, personnel);
-        }
-        console.log("Synced medical records to personnel documents");
-      }
+      // Merge documents into personnel records
+      const updatedPersonnel = personnelData?.map(personnel => ({
+        ...personnel,
+        documents: documentsByPersonnel[personnel.id] || []
+      })) || [];
 
-      return updatedPersonnel;
+      setPersonnelList(updatedPersonnel);
     } catch (error) {
-      console.error("Error syncing medical records:", error);
-      return personnelList;
+      console.error("Error loading personnel:", error);
+      toast.error("Failed to load personnel data");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Define getFieldValue FIRST
+  // Upload file to Supabase Storage
+  const uploadToSupabaseStorage = async (file, personnelId, recordType = "") => {
+    try {
+      console.log("Starting upload for file:", file.name);
+      
+      // Check file size (limit to 50MB)
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size > maxSize) {
+        throw new Error(`File size too large. Maximum size is 50MB. Your file is ${(file.size / (1024*1024)).toFixed(2)}MB`);
+      }
+
+      // Create unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      const filePath = `${personnelId}/${fileName}`;
+
+      console.log("Uploading to path:", filePath);
+
+      // Check if storage bucket exists and is accessible
+      const { data: bucketData, error: bucketError } = await supabase.storage
+        .from('personnel-documents')
+        .list();
+
+      if (bucketError) {
+        console.error("Bucket access error:", bucketError);
+        // Continue anyway, the bucket might not exist but will be created on upload
+      }
+
+      // Upload file to storage
+      const { data, error } = await supabase.storage
+        .from('personnel-documents')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error("Storage upload error:", error);
+        throw error;
+      }
+
+      console.log("Upload successful:", data);
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('personnel-documents')
+        .getPublicUrl(filePath);
+
+      console.log("Public URL:", publicUrl);
+
+      return {
+        url: publicUrl,
+        fileName: file.name,
+        filePath: filePath,
+        fileType: file.type,
+        fileSize: file.size
+      };
+    } catch (error) {
+      console.error("Error uploading to Supabase:", error);
+      throw error;
+    }
+  };
+
+  // Save document metadata to Supabase database
+  const saveDocumentMetadata = async (documentData) => {
+    try {
+      const { data, error } = await supabase
+        .from('personnel_documents')
+        .insert([documentData])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error("Error saving document metadata:", error);
+      throw error;
+    }
+  };
+
+  // Save uploaded files
+  const saveUploadedFiles = async (index) => {
+    if (!pendingUploads[index] || uploading) return;
+
+    try {
+      setUploading(true);
+      const files = pendingUploads[index];
+      const personnel = paginatedPersonnel[index];
+      const category = document.getElementById(`doc-category-${index}`).value;
+      
+      let recordType = "";
+      if (category === "Medical Record") {
+        recordType = medicalRecordTypes[personnel.id] || "General";
+      } else if (category === "Award/Commendation") {
+        recordType = awardTypes[personnel.id] || "General";
+      }
+
+      // Process each file sequentially to avoid race conditions
+      for (const file of files) {
+        try {
+          toast.info(`Uploading ${file.name}...`);
+          
+          // Upload to Supabase Storage
+          const uploadResult = await uploadToSupabaseStorage(file, personnel.id, recordType);
+          
+          // Save document metadata to database
+          const documentData = {
+            personnel_id: personnel.id,
+            name: file.name,
+            category: category,
+            record_type: recordType,
+            file_url: uploadResult.url,
+            file_path: uploadResult.filePath,
+            file_type: uploadResult.fileType,
+            file_size: uploadResult.fileSize,
+            description: `${category} for ${personnel.first_name} ${personnel.last_name}`,
+            uploaded_at: new Date().toISOString()
+          };
+
+          await saveDocumentMetadata(documentData);
+          
+          toast.success(`Uploaded: ${file.name}`);
+          
+        } catch (fileError) {
+          console.error(`Error uploading file ${file.name}:`, fileError);
+          toast.error(`Failed to upload: ${file.name} - ${fileError.message}`);
+        }
+      }
+
+      // Clear pending uploads
+      setPendingUploads(prev => {
+        const newPending = { ...prev };
+        delete newPending[index];
+        return newPending;
+      });
+
+      // Clear record types
+      setMedicalRecordTypes(prev => {
+        const newTypes = { ...prev };
+        delete newTypes[personnel.id];
+        return newTypes;
+      });
+      setAwardTypes(prev => {
+        const newTypes = { ...prev };
+        delete newTypes[personnel.id];
+        return newTypes;
+      });
+
+      // Reload personnel data
+      await loadPersonnel();
+      toast.success("Files uploaded successfully!");
+      
+    } catch (error) {
+      console.error("Error saving uploaded files:", error);
+      toast.error(`Error saving files: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Remove document
+  const removeDocument = async (documentId, filePath) => {
+    try {
+      // Delete from storage if file exists
+      if (filePath) {
+        console.log("Deleting from storage:", filePath);
+        const { error: storageError } = await supabase.storage
+          .from('personnel-documents')
+          .remove([filePath]);
+
+        if (storageError) {
+          console.warn("File not found in storage:", storageError);
+          // Continue with database deletion even if storage fails
+        } else {
+          console.log("File deleted from storage");
+        }
+      }
+
+      // Delete from database
+      console.log("Deleting from database:", documentId);
+      const { error: dbError } = await supabase
+        .from('personnel_documents')
+        .delete()
+        .eq('id', documentId);
+
+      if (dbError) throw dbError;
+
+      console.log("Document deleted successfully");
+      toast.success("Document deleted successfully");
+      await loadPersonnel(); // Reload data
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      toast.error("Error deleting document. Please try again.");
+    }
+  };
+
+  // Open delete modal
+  const openDeleteModal = (document) => {
+    setDocumentToDelete(document);
+    setShowDeleteModal(true);
+  };
+
+  // Close delete modal
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setDocumentToDelete(null);
+  };
+
+  // Confirm delete
+  const confirmDelete = async () => {
+    if (documentToDelete) {
+      console.log("Deleting document:", documentToDelete);
+      await removeDocument(documentToDelete.id, documentToDelete.file_path);
+      closeDeleteModal();
+    }
+  };
+
+  // Handle document click
+  const handleDocumentClick = (doc, personnel) => {
+    setSelectedDocument({
+      ...doc,
+      personnelName: `${personnel.first_name} ${personnel.last_name}`,
+      personnelRank: personnel.rank,
+      personnelDesignation: personnel.designation,
+    });
+    setShowPreviewSidebar(true);
+  };
+
+  // Close preview sidebar
+  const closePreviewSidebar = () => {
+    setShowPreviewSidebar(false);
+    setSelectedDocument(null);
+  };
+
+  // Prepare upload
+  const prepareUpload = (event, index) => {
+    const files = event.target.files;
+    const categorySelect = document.getElementById(`doc-category-${index}`);
+    const selectedCategory = categorySelect ? categorySelect.value : "";
+
+    if (files.length > 0) {
+      const fileNames = Array.from(files)
+        .map((file) => file.name)
+        .join(", ");
+      toast.info(`Selected ${files.length} file(s): ${fileNames}`);
+      
+      // Check file sizes
+      let hasLargeFile = false;
+      Array.from(files).forEach(file => {
+        if (file.size > 50 * 1024 * 1024) { // 50MB
+          hasLargeFile = true;
+          toast.warning(`${file.name} is larger than 50MB`);
+        }
+      });
+
+      if (hasLargeFile) {
+        toast.error("Some files exceed the 50MB limit. Please select smaller files.");
+        event.target.value = ""; // Clear the input
+        return;
+      }
+    }
+
+    setPendingUploads(prev => ({
+      ...prev,
+      [index]: files,
+    }));
+
+    // Open appropriate modal based on category
+    if (selectedCategory === "Medical Record" && files.length > 0) {
+      openMedicalRecordModal(index);
+    } else if (selectedCategory === "Award/Commendation" && files.length > 0) {
+      openAwardModal(index);
+    }
+  };
+
+  // Open modals
+  const openMedicalRecordModal = (index) => {
+    setCurrentPersonnelIndex(index);
+    setShowMedicalRecordModal(true);
+  };
+
+  const openAwardModal = (index) => {
+    setCurrentPersonnelIndex(index);
+    setShowAwardModal(true);
+  };
+
+  const closeMedicalRecordModal = () => {
+    setShowMedicalRecordModal(false);
+    setCurrentPersonnelIndex(null);
+  };
+
+  const closeAwardModal = () => {
+    setShowAwardModal(false);
+    setCurrentPersonnelIndex(null);
+  };
+
+  // Handle type selection
+  const handleMedicalRecordTypeSelect = (personnelId, type) => {
+    setMedicalRecordTypes((prev) => ({
+      ...prev,
+      [personnelId]: type,
+    }));
+  };
+
+  const handleAwardTypeSelect = (personnelId, type) => {
+    setAwardTypes((prev) => ({
+      ...prev,
+      [personnelId]: type,
+    }));
+  };
+
+  // Get field value for filtering
   const getFieldValue = (personnel, field) => {
     switch (field) {
       case "firstName":
@@ -190,120 +465,10 @@ const PersonnelProfile = () => {
     pageStart + rowsPerPage
   );
 
-  // Pagination function
-  const renderPaginationButtons = () => {
-    const pageCount = Math.max(
-      1,
-      Math.ceil(filteredPersonnel.length / rowsPerPage)
-    );
-    const hasNoData = filteredPersonnel.length === 0;
-
-    const buttons = [];
-
-    // Previous button
-    buttons.push(
-      <button
-        key="prev"
-        className={`${styles.paginationBtn} ${
-          hasNoData ? styles.paginationDisabled : ""
-        }`}
-        disabled={currentPage === 1 || hasNoData}
-        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-      >
-        Previous
-      </button>
-    );
-
-    // Always show first page
-    buttons.push(
-      <button
-        key={1}
-        className={`${styles.paginationBtn} ${
-          1 === currentPage ? styles.paginationActive : ""
-        } ${hasNoData ? styles.paginationDisabled : ""}`}
-        onClick={() => setCurrentPage(1)}
-        disabled={hasNoData}
-      >
-        1
-      </button>
-    );
-
-    // Show ellipsis after first page if needed
-    if (currentPage > 3) {
-      buttons.push(
-        <span key="ellipsis1" className={styles.paginationEllipsis}>
-          ...
-        </span>
-      );
-    }
-
-    // Show pages around current page
-    let startPage = Math.max(2, currentPage - 1);
-    let endPage = Math.min(pageCount - 1, currentPage + 1);
-
-    if (currentPage <= 3) {
-      endPage = Math.min(pageCount - 1, 4);
-    }
-
-    if (currentPage >= pageCount - 2) {
-      startPage = Math.max(2, pageCount - 3);
-    }
-
-    for (let i = startPage; i <= endPage; i++) {
-      if (i > 1 && i < pageCount) {
-        buttons.push(
-          <button
-            key={i}
-            className={`${styles.paginationBtn} ${
-              i === currentPage ? styles.paginationActive : ""
-            } ${hasNoData ? styles.paginationDisabled : ""}`}
-            onClick={() => setCurrentPage(i)}
-            disabled={hasNoData}
-          >
-            {i}
-          </button>
-        );
-      }
-    }
-
-    if (currentPage < pageCount - 2) {
-      buttons.push(
-        <span key="ellipsis2" className={styles.paginationEllipsis}>
-          ...
-        </span>
-      );
-    }
-
-    if (pageCount > 1) {
-      buttons.push(
-        <button
-          key={pageCount}
-          className={`${styles.paginationBtn} ${
-            pageCount === currentPage ? styles.paginationActive : ""
-          } ${hasNoData ? styles.paginationDisabled : ""}`}
-          onClick={() => setCurrentPage(pageCount)}
-          disabled={hasNoData}
-        >
-          {pageCount}
-        </button>
-      );
-    }
-
-    // Next button
-    buttons.push(
-      <button
-        key="next"
-        className={`${styles.paginationBtn} ${
-          hasNoData ? styles.paginationDisabled : ""
-        }`}
-        disabled={currentPage === pageCount || hasNoData}
-        onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))}
-      >
-        Next
-      </button>
-    );
-
-    return buttons;
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery("");
+    setCurrentPage(1);
   };
 
   // Highlight search text
@@ -343,343 +508,70 @@ const PersonnelProfile = () => {
       );
   };
 
-  // Modal Functions
-  const openMedicalRecordModal = (index) => {
-    setCurrentPersonnelIndex(index);
-    setShowMedicalRecordModal(true);
-  };
+  // Render pagination buttons
+  const renderPaginationButtons = () => {
+    const pageCount = Math.max(
+      1,
+      Math.ceil(filteredPersonnel.length / rowsPerPage)
+    );
+    const hasNoData = filteredPersonnel.length === 0;
 
-  const openAwardModal = (index) => {
-    setCurrentPersonnelIndex(index);
-    setShowAwardModal(true);
-  };
+    if (pageCount <= 1) return null;
 
-  const closeMedicalRecordModal = () => {
-    setShowMedicalRecordModal(false);
-    setCurrentPersonnelIndex(null);
-  };
+    const buttons = [];
 
-  const closeAwardModal = () => {
-    setShowAwardModal(false);
-    setCurrentPersonnelIndex(null);
-  };
+    // Previous button
+    buttons.push(
+      <button
+        key="prev"
+        className={`${styles.paginationBtn} ${hasNoData ? styles.paginationDisabled : ""}`}
+        disabled={currentPage === 1 || hasNoData}
+        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+      >
+        Previous
+      </button>
+    );
 
-  const handleMedicalRecordTypeSelect = (personnelId, type) => {
-    setMedicalRecordTypes((prev) => ({
-      ...prev,
-      [personnelId]: type,
-    }));
-  };
-
-  const handleAwardTypeSelect = (personnelId, type) => {
-    setAwardTypes((prev) => ({
-      ...prev,
-      [personnelId]: type,
-    }));
-  };
-
-  const openDeleteModal = (
-    personnelId,
-    documentIndex,
-    documentName,
-    documentCategory
-  ) => {
-    setDocumentToDelete({
-      personnelId,
-      documentIndex,
-      documentName,
-      documentCategory,
-    });
-    setShowDeleteModal(true);
-  };
-
-  const closeDeleteModal = () => {
-    setShowDeleteModal(false);
-    setDocumentToDelete(null);
-  };
-
-  const confirmDelete = async () => {
-    if (documentToDelete) {
-      await removeDocument(
-        documentToDelete.personnelId,
-        documentToDelete.documentIndex,
-        documentToDelete.documentName,
-        documentToDelete.documentCategory
-      );
-      closeDeleteModal();
-    }
-  };
-
-  // File upload functionality
-  const prepareUpload = (event, index) => {
-    const files = event.target.files;
-    const categorySelect = document.getElementById(`doc-category-${index}`);
-    const selectedCategory = categorySelect ? categorySelect.value : "";
-
-    if (files.length > 0) {
-      const fileNames = Array.from(files)
-        .map((file) => file.name)
-        .join(", ");
-      const message =
-        files.length === 1
-          ? `Selected file: ${fileNames}`
-          : `Selected ${files.length} files: ${fileNames}`;
-      toast.info(message);
+    // Generate page buttons
+    for (let i = 1; i <= pageCount; i++) {
+      if (
+        i === 1 ||
+        i === pageCount ||
+        (i >= currentPage - 1 && i <= currentPage + 1)
+      ) {
+        buttons.push(
+          <button
+            key={i}
+            className={`${styles.paginationBtn} ${i === currentPage ? styles.paginationActive : ""} ${hasNoData ? styles.paginationDisabled : ""}`}
+            onClick={() => setCurrentPage(i)}
+            disabled={hasNoData}
+          >
+            {i}
+          </button>
+        );
+      } else if (i === currentPage - 2 || i === currentPage + 2) {
+        buttons.push(
+          <span key={`ellipsis-${i}`} className={styles.paginationEllipsis}>
+            ...
+          </span>
+        );
+      }
     }
 
-    // Open appropriate modal based on category
-    if (selectedCategory === "Medical Record" && files.length > 0) {
-      setPendingUploads((prev) => ({
-        ...prev,
-        [index]: files,
-      }));
-      openMedicalRecordModal(index);
-    } else if (selectedCategory === "Award/Commendation" && files.length > 0) {
-      setPendingUploads((prev) => ({
-        ...prev,
-        [index]: files,
-      }));
-      openAwardModal(index);
-    } else {
-      setPendingUploads((prev) => ({
-        ...prev,
-        [index]: files,
-      }));
-    }
+    // Next button
+    buttons.push(
+      <button
+        key="next"
+        className={`${styles.paginationBtn} ${hasNoData ? styles.paginationDisabled : ""}`}
+        disabled={currentPage === pageCount || hasNoData}
+        onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))}
+      >
+        Next
+      </button>
+    );
+
+    return buttons;
   };
-
-  const saveUploadedFiles = async (index) => {
-    if (!pendingUploads[index]) return;
-
-    try {
-      const files = pendingUploads[index];
-      const personnelToUpdate = paginatedPersonnel[index];
-      const personnelId = personnelToUpdate.id;
-      const category = document.getElementById(`doc-category-${index}`).value;
-      const newDocs = [...(personnelToUpdate.documents || [])];
-
-      let recordType = "";
-
-      if (category === "Medical Record") {
-        recordType = medicalRecordTypes[personnelId] || "General";
-      } else if (category === "Award/Commendation") {
-        recordType = awardTypes[personnelId] || "General";
-      }
-
-      // Process each file
-      for (const file of files) {
-        const url = URL.createObjectURL(file);
-        const fileData = await fileToArrayBuffer(file);
-
-        // Create document object for personnel store
-        const documentObj = {
-          name: file.name,
-          category,
-          url,
-          fileData: fileData,
-          fileType: file.type || "application/octet-stream",
-          fileSize: file.size,
-          uploadedAt: new Date().toISOString(),
-          recordType: recordType,
-        };
-
-        newDocs.push(documentObj);
-
-        // Save to medical records store if it's a medical record
-        if (category === "Medical Record") {
-          try {
-            await addMedicalRecord(
-              {
-                personnelId: personnelToUpdate.id,
-                documentName: file.name,
-                recordType: recordType,
-                fileName: file.name,
-                uploadDate: new Date().toISOString(),
-                description: `Medical record for ${personnelToUpdate.first_name} ${personnelToUpdate.last_name}`,
-                category: "Medical Record",
-              },
-              file
-            );
-          } catch (medicalError) {
-            console.error(
-              `Error saving to medical records store:`,
-              medicalError
-            );
-            toast.warning(
-              `Medical record saved to personnel but failed in medical store: ${file.name}`
-            );
-          }
-        }
-      }
-
-      // Update personnel record with new documents
-      const updatedPersonnel = {
-        ...personnelToUpdate,
-        documents: newDocs,
-      };
-
-      await updateRecord(STORE_PERSONNEL, updatedPersonnel);
-
-      // Reload the data from IndexedDB to refresh the UI
-      const updatedList = await getPersonnelList();
-      setPersonnelList(updatedList);
-
-      // Clear pending uploads for this index
-      setPendingUploads((prev) => {
-        const newPending = { ...prev };
-        delete newPending[index];
-        return newPending;
-      });
-
-      // Clear record types
-      setMedicalRecordTypes((prev) => {
-        const newTypes = { ...prev };
-        delete newTypes[personnelId];
-        return newTypes;
-      });
-      setAwardTypes((prev) => {
-        const newTypes = { ...prev };
-        delete newTypes[personnelId];
-        return newTypes;
-      });
-
-      toast.success(
-        `Successfully saved ${files.length} file(s) for ${personnelToUpdate.first_name} ${personnelToUpdate.last_name}`
-      );
-    } catch (error) {
-      console.error("Error saving uploaded files:", error);
-      toast.error("Error saving files. Please try again.");
-    }
-  };
-
-  // Helper function to convert files to ArrayBuffer
-  const fileToArrayBuffer = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  // Document click handler for Windows 11-style preview
-  const handleDocumentClick = (doc, personnel) => {
-    setSelectedDocument({
-      ...doc,
-      personnelName: `${personnel.first_name} ${personnel.last_name}`,
-      personnelRank: personnel.rank,
-      personnelDesignation: personnel.designation,
-    });
-    setShowPreviewSidebar(true);
-  };
-
-  // Close preview sidebar
-  const closePreviewSidebar = () => {
-    setShowPreviewSidebar(false);
-    setSelectedDocument(null);
-  };
-
-  // Remove document function
-  const removeDocument = async (
-    personnelId,
-    documentIndex,
-    documentName,
-    documentCategory
-  ) => {
-    try {
-      const personnelIndex = personnelList.findIndex(
-        (p) => p.id === personnelId
-      );
-      if (personnelIndex === -1) {
-        toast.error("Personnel not found");
-        return;
-      }
-
-      const personnel = personnelList[personnelIndex];
-      const documents = [...(personnel.documents || [])];
-
-      if (documentIndex < 0 || documentIndex >= documents.length) {
-        toast.error("Document not found");
-        return;
-      }
-
-      const removedDocument = documents[documentIndex];
-      documents.splice(documentIndex, 1);
-
-      const updatedPersonnel = {
-        ...personnel,
-        documents: documents,
-      };
-
-      // Update personnel record in IndexedDB
-      await updateRecord(STORE_PERSONNEL, updatedPersonnel);
-
-      // If it's a medical record, also remove from medical records store
-      if (removedDocument.category === "Medical Record") {
-        try {
-          const medicalRecords = await getAll("medicalRecords");
-          const medicalRecordToDelete = medicalRecords.find(
-            (record) =>
-              record.personnelId === personnelId &&
-              record.documentName === removedDocument.name
-          );
-
-          if (medicalRecordToDelete) {
-            // Delete from medical records store
-            await deleteRecord("medicalRecords", medicalRecordToDelete.id);
-            console.log(
-              "Also removed from medical records store:",
-              removedDocument.name
-            );
-          }
-        } catch (medicalError) {
-          console.error(
-            "Error removing from medical records store:",
-            medicalError
-          );
-          // Don't show error to user - main deletion was successful
-        }
-      }
-
-      // Update local state
-      const updatedList = [...personnelList];
-      updatedList[personnelIndex] = updatedPersonnel;
-      setPersonnelList(updatedList);
-
-      toast.success(`Document "${removedDocument.name}" removed successfully`);
-
-      // Close preview sidebar if the deleted document is currently being viewed
-      if (selectedDocument && selectedDocument.name === removedDocument.name) {
-        closePreviewSidebar();
-      }
-    } catch (error) {
-      console.error("Error removing document:", error);
-      toast.error("Error removing document. Please try again.");
-    }
-  };
-  // Clear search
-  const clearSearch = () => {
-    setSearchQuery("");
-    setCurrentPage(1);
-  };
-
-  // Keyboard shortcut for clearing search
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape" && searchQuery) {
-        clearSearch();
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [searchQuery]);
-
-  // Reset to page 1 when search query changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, filterBy]);
 
   if (isLoading) {
     return (
@@ -708,6 +600,7 @@ const PersonnelProfile = () => {
           }
         />
       )}
+      
       {/* Award/Commendation Modal */}
       {showAwardModal && currentPersonnelIndex !== null && (
         <AwardModal
@@ -724,10 +617,11 @@ const PersonnelProfile = () => {
           }
         />
       )}
+      
       {/* Delete Confirmation Modal */}
       {showDeleteModal && documentToDelete && (
         <DeleteConfirmationModal
-          documentName={documentToDelete.documentName}
+          documentName={documentToDelete.name}
           onConfirm={confirmDelete}
           onCancel={closeDeleteModal}
         />
@@ -735,10 +629,7 @@ const PersonnelProfile = () => {
 
       {showPreviewSidebar && selectedDocument && (
         <>
-          <div
-            className={styles.previewSidebarOverlay}
-            onClick={closePreviewSidebar}
-          />
+          <div className={styles.previewSidebarOverlay} onClick={closePreviewSidebar} />
           <PreviewSidebar
             document={selectedDocument}
             onClose={closePreviewSidebar}
@@ -746,10 +637,12 @@ const PersonnelProfile = () => {
           />
         </>
       )}
+      
       <Title>Personnel Profile | BFP Villanueva</Title>
       <Meta name="robots" content="noindex, nofollow" />
       <Hamburger />
       <Sidebar />
+      
       <ToastContainer
         position="top-right"
         autoClose={5000}
@@ -762,17 +655,11 @@ const PersonnelProfile = () => {
         pauseOnHover
         theme="light"
       />
+      
       {/* Main Content */}
-      <div
-        className={`main-content ${isSidebarCollapsed ? "collapsed" : ""} ${
-          showPreviewSidebar ? styles.withPreviewSidebar : ""
-        }`}
-      >
+      <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <div className={styles.preSearchBar}>
-          <select
-            value={filterBy}
-            onChange={(e) => setFilterBy(e.target.value)}
-          >
+          <select value={filterBy} onChange={(e) => setFilterBy(e.target.value)}>
             <option value="firstName">First Name</option>
             <option value="lastName">Last Name</option>
             <option value="rank">Rank</option>
@@ -786,13 +673,19 @@ const PersonnelProfile = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="🔍 Search personnel..."
           />
-          <button onClick={clearSearch}>✕</button>
+          {searchQuery && (
+            <button onClick={clearSearch} className={styles.clearSearchBtn}>✕</button>
+          )}
         </div>
+        
         <h1>Personnel Profile (201 Files)</h1>
+        
         {/* Pagination Controls */}
-        <div className={styles.paginationContainer}>
-          {renderPaginationButtons()}
-        </div>
+        {filteredPersonnel.length > rowsPerPage && (
+          <div className={styles.paginationContainer}>
+            {renderPaginationButtons()}
+          </div>
+        )}
 
         <div className={styles.prePersonnelCards}>
           {paginatedPersonnel.length > 0 ? (
@@ -807,12 +700,13 @@ const PersonnelProfile = () => {
                 onPrepareUpload={prepareUpload}
                 onSaveUploadedFiles={saveUploadedFiles}
                 pendingUploads={pendingUploads}
+                uploading={uploading}
                 onDocumentClick={handleDocumentClick}
                 onRemoveDocument={openDeleteModal}
                 medicalRecordType={medicalRecordTypes[personnel.id] || ""}
                 awardType={awardTypes[personnel.id] || ""}
-                formatDate={formatDate} // Add this
-                formatTimestamp={formatTimestamp} // Add this
+                formatDate={formatDate}
+                formatTimestamp={formatTimestamp}
               />
             ))
           ) : (
@@ -822,17 +716,181 @@ const PersonnelProfile = () => {
               <div className={styles.emptyStateMessage}>
                 {searchQuery
                   ? `No personnel found matching "${searchQuery}"`
-                  : "BFP personnel register is empty - add your first team member"}
+                  : "BFP personnel register is empty"}
               </div>
             </div>
           )}
         </div>
+        
         {/* Pagination Controls */}
         {filteredPersonnel.length > rowsPerPage && (
           <div className={styles.paginationContainer}>
             {renderPaginationButtons()}
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Medical Record Modal Component
+const MedicalRecordModal = ({ personnel, onSelectType, onClose, selectedType }) => {
+  const recordTypes = [
+    { id: "Checkup", label: "Check Ups", icon: "🩺" },
+    { id: "Lab", label: "Lab Tests", icon: "🧪" },
+    { id: "Imaging", label: "Imaging", icon: "📷" },
+    { id: "Dental", label: "Dental", icon: "🦷" },
+  ];
+
+  const handleContinue = () => {
+    if (!selectedType) {
+      toast.error("Please select a medical record type first.");
+      return;
+    }
+    onClose();
+  };
+
+  return (
+    <div className={styles.preModal} style={{ display: "flex" }}>
+      <div className={styles.preModalContent} style={{ maxWidth: "500px" }}>
+        <div className={styles.preModalHeader}>
+          <h2>Select Medical Record Type</h2>
+          <span className={styles.preCloseBtn} onClick={onClose}>
+            &times;
+          </span>
+        </div>
+
+        <div className={styles.preModalBody}>
+          <p style={{ marginBottom: "20px", textAlign: "center" }}>
+            For <strong>{personnel.first_name} {personnel.last_name}</strong>
+          </p>
+
+          <div className={styles.medicalRecordTypes}>
+            {recordTypes.map((type) => (
+              <button
+                key={type.id}
+                className={`${styles.medicalRecordTypeBtn} ${
+                  selectedType === type.id ? styles.medicalRecordTypeBtnSelected : ""
+                }`}
+                onClick={() => onSelectType(type.id)}
+              >
+                <span className={styles.medicalRecordIcon}>{type.icon}</span>
+                <span className={styles.medicalRecordLabel}>{type.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {selectedType && (
+            <div className={styles.selectedTypeInfo}>
+              <p>
+                Selected: <strong>
+                  {recordTypes.find((t) => t.id === selectedType)?.label}
+                </strong>
+              </p>
+              <p className={styles.instruction}>
+                You can now save the files as medical records.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.preModalActions}>
+          <button
+            className={`${styles.preBtn} ${styles.preCancelBtnModal}`}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className={`${styles.preBtn} ${styles.preSaveBtn}`}
+            onClick={handleContinue}
+            disabled={!selectedType}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Award Modal Component
+const AwardModal = ({ personnel, onSelectType, onClose, selectedType }) => {
+  const awardTypes = [
+    { id: "Medal", label: "Medal", icon: "🏅" },
+    { id: "Commendation", label: "Commendation", icon: "⭐" },
+    { id: "Certificate", label: "Certificate", icon: "📜" },
+    { id: "Ribbon", label: "Ribbon", icon: "🎗️" },
+    { id: "Badge", label: "Badge", icon: "🛡️" },
+  ];
+
+  const handleContinue = () => {
+    if (!selectedType) {
+      toast.error("Please select an award type first.");
+      return;
+    }
+    onClose();
+  };
+
+  return (
+    <div className={styles.preModal} style={{ display: "flex" }}>
+      <div className={styles.preModalContent} style={{ maxWidth: "500px" }}>
+        <div className={styles.preModalHeader}>
+          <h2>Select Award Type</h2>
+          <span className={styles.preCloseBtn} onClick={onClose}>
+            &times;
+          </span>
+        </div>
+
+        <div className={styles.preModalBody}>
+          <p style={{ marginBottom: "20px", textAlign: "center" }}>
+            For <strong>{personnel.first_name} {personnel.last_name}</strong>
+          </p>
+
+          <div className={styles.medicalRecordTypes}>
+            {awardTypes.map((type) => (
+              <button
+                key={type.id}
+                className={`${styles.medicalRecordTypeBtn} ${
+                  selectedType === type.id ? styles.medicalRecordTypeBtnSelected : ""
+                }`}
+                onClick={() => onSelectType(type.id)}
+              >
+                <span className={styles.medicalRecordIcon}>{type.icon}</span>
+                <span className={styles.medicalRecordLabel}>{type.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {selectedType && (
+            <div className={styles.selectedTypeInfo}>
+              <p>
+                Selected: <strong>
+                  {awardTypes.find((t) => t.id === selectedType)?.label}
+                </strong>
+              </p>
+              <p className={styles.instruction}>
+                You can now save the files as awards/commendations.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.preModalActions}>
+          <button
+            className={`${styles.preBtn} ${styles.preCancelBtnModal}`}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className={`${styles.preBtn} ${styles.preSaveBtn}`}
+            onClick={handleContinue}
+            disabled={!selectedType}
+          >
+            Continue
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -882,195 +940,14 @@ const DeleteConfirmationModal = ({ documentName, onConfirm, onCancel }) => {
   );
 };
 
-// Award Modal Component (Similar to Medical Record Modal)
-const AwardModal = ({ personnel, onSelectType, onClose, selectedType }) => {
-  const awardTypes = [
-    { id: "Medal", label: "Medal", icon: "🏅" },
-    { id: "Commendation", label: "Commendation", icon: "⭐" },
-    { id: "Certificate", label: "Certificate", icon: "📜" },
-    { id: "Ribbon", label: "Ribbon", icon: "🎗️" },
-    { id: "Badge", label: "Badge", icon: "🛡️" },
-  ];
-
-  const handleContinue = () => {
-    if (!selectedType) {
-      alert("Please select an award type first.");
-      return;
-    }
-    onClose();
-  };
-
-  return (
-    <div className={styles.preModal} style={{ display: "flex" }}>
-      <div className={styles.preModalContent} style={{ maxWidth: "500px" }}>
-        <div className={styles.preModalHeader}>
-          <h2>Select Award Type</h2>
-          <span className={styles.preCloseBtn} onClick={onClose}>
-            &times;
-          </span>
-        </div>
-
-        <div className={styles.preModalBody}>
-          <p style={{ marginBottom: "20px", textAlign: "center" }}>
-            For{" "}
-            <strong>
-              {personnel.first_name} {personnel.last_name}
-            </strong>
-          </p>
-
-          <div className={styles.medicalRecordTypes}>
-            {awardTypes.map((type) => (
-              <button
-                key={type.id}
-                className={`${styles.medicalRecordTypeBtn} ${
-                  selectedType === type.id
-                    ? styles.medicalRecordTypeBtnSelected
-                    : ""
-                }`}
-                onClick={() => onSelectType(type.id)}
-              >
-                <span className={styles.medicalRecordIcon}>{type.icon}</span>
-                <span className={styles.medicalRecordLabel}>{type.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {selectedType && (
-            <div className={styles.selectedTypeInfo}>
-              <p>
-                Selected:{" "}
-                <strong>
-                  {awardTypes.find((t) => t.id === selectedType)?.label}
-                </strong>
-              </p>
-              <p className={styles.instruction}>
-                You can now save the files as awards/commendations.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.preModalActions}>
-          <button
-            className={`${styles.preBtn} ${styles.preCancelBtnModal}`}
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className={`${styles.preBtn} ${styles.preSaveBtn}`}
-            onClick={handleContinue}
-            disabled={!selectedType}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Medical Record Modal Component
-const MedicalRecordModal = ({
-  personnel,
-  onSelectType,
-  onClose,
-  selectedType,
-}) => {
-  const recordTypes = [
-    { id: "Checkup", label: "Check Ups", icon: "🩺" },
-    { id: "Lab", label: "Lab Tests", icon: "🧪" },
-    { id: "Imaging", label: "Imaging", icon: "📷" },
-    { id: "Dental", label: "Dental", icon: "🦷" },
-  ];
-
-  const handleContinue = () => {
-    if (!selectedType) {
-      alert("Please select a medical record type first.");
-      return;
-    }
-    onClose();
-  };
-
-  return (
-    <div className={styles.preModal} style={{ display: "flex" }}>
-      <div className={styles.preModalContent} style={{ maxWidth: "500px" }}>
-        <div className={styles.preModalHeader}>
-          <h2>Select Medical Record Type</h2>
-          <span className={styles.preCloseBtn} onClick={onClose}>
-            &times;
-          </span>
-        </div>
-
-        <div className={styles.preModalBody}>
-          <p style={{ marginBottom: "20px", textAlign: "center" }}>
-            For{" "}
-            <strong>
-              {personnel.first_name} {personnel.last_name}
-            </strong>
-          </p>
-
-          <div className={styles.medicalRecordTypes}>
-            {recordTypes.map((type) => (
-              <button
-                key={type.id}
-                className={`${styles.medicalRecordTypeBtn} ${
-                  selectedType === type.id
-                    ? styles.medicalRecordTypeBtnSelected
-                    : ""
-                }`}
-                onClick={() => onSelectType(type.id)}
-              >
-                <span className={styles.medicalRecordIcon}>{type.icon}</span>
-                <span className={styles.medicalRecordLabel}>{type.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {selectedType && (
-            <div className={styles.selectedTypeInfo}>
-              <p>
-                Selected:{" "}
-                <strong>
-                  {recordTypes.find((t) => t.id === selectedType)?.label}
-                </strong>
-              </p>
-              <p className={styles.instruction}>
-                You can now save the files as medical records.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.preModalActions}>
-          <button
-            className={`${styles.preBtn} ${styles.preCancelBtnModal}`}
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className={`${styles.preBtn} ${styles.preSaveBtn}`}
-            onClick={handleContinue}
-            disabled={!selectedType}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Preview Sidebar Component (Windows 11-style)
-const PreviewSidebar = ({ document, onClose, formatTimestamp }) => { // Add formatTimestamp prop
+// Preview Sidebar Component
+const PreviewSidebar = ({ document, onClose, formatTimestamp }) => {
   const [pdfError, setPdfError] = useState(false);
   const iframeRef = useRef(null);
 
   const getFileIcon = (fileName) => {
     if (fileName.toLowerCase().endsWith(".pdf")) return "📄";
-    if (fileName.toLowerCase().match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i))
-      return "🖼️";
+    if (fileName.toLowerCase().match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)) return "🖼️";
     if (fileName.toLowerCase().match(/\.(doc|docx)$/i)) return "📝";
     if (fileName.toLowerCase().match(/\.(xls|xlsx)$/i)) return "📊";
     return "📎";
@@ -1081,12 +958,8 @@ const PreviewSidebar = ({ document, onClose, formatTimestamp }) => { // Add form
   }, [document]);
 
   const handlePdfError = () => {
-    console.error("PDF failed to load:", document.url);
+    console.error("PDF failed to load:", document.file_url);
     setPdfError(true);
-  };
-
-  const handleIframeLoad = () => {
-    console.log("Iframe loaded successfully");
   };
 
   return (
@@ -1106,7 +979,7 @@ const PreviewSidebar = ({ document, onClose, formatTimestamp }) => { // Add form
                 <div className={styles.fileIconLarge}>📄</div>
                 <p>Unable to display PDF preview</p>
                 <a
-                  href={document.url}
+                  href={document.file_url}
                   className={styles.openInNewTabBtn}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1115,32 +988,22 @@ const PreviewSidebar = ({ document, onClose, formatTimestamp }) => { // Add form
                 </a>
               </div>
             ) : (
-              <>
-                <iframe
-                  ref={iframeRef}
-                  src={document.url}
-                  type="application/pdf"
-                  className={styles.previewIframe}
-                  onLoad={handleIframeLoad}
-                  onError={handlePdfError}
-                  title={`PDF Preview: ${document.name}`}
-                />
-                <embed
-                  src={document.url}
-                  type="application/pdf"
-                  className={styles.previewEmbed}
-                  onError={handlePdfError}
-                  style={{ display: "none" }}
-                />
-              </>
+              <iframe
+                ref={iframeRef}
+                src={document.file_url}
+                type="application/pdf"
+                className={styles.previewIframe}
+                onError={handlePdfError}
+                title={`PDF Preview: ${document.name}`}
+              />
             )
           ) : document.name.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i) ? (
             <img
-              src={document.url}
+              src={document.file_url}
               alt={document.name}
               className={styles.previewImage}
               onError={(e) => {
-                console.error("Image failed to load:", document.url);
+                console.error("Image failed to load:", document.file_url);
                 e.target.style.display = "none";
               }}
             />
@@ -1174,18 +1037,18 @@ const PreviewSidebar = ({ document, onClose, formatTimestamp }) => { // Add form
                 {document.name.split(".").pop()?.toUpperCase()}
               </span>
             </div>
-            {document.recordType && (
+            {document.record_type && (
               <div className={styles.detailRow}>
                 <span className={styles.detailLabel}>Record Type:</span>
                 <span className={styles.detailValue}>
-                  {document.recordType}
+                  {document.record_type}
                 </span>
               </div>
             )}
             <div className={styles.detailRow}>
               <span className={styles.detailLabel}>Uploaded:</span>
               <span className={styles.detailValue}>
-                {formatTimestamp(document.uploadedAt)} {/* Use the passed function */}
+                {formatTimestamp(document.uploaded_at)}
               </span>
             </div>
           </div>
@@ -1217,7 +1080,7 @@ const PreviewSidebar = ({ document, onClose, formatTimestamp }) => { // Add form
   );
 };
 
-
+// PersonnelCard Component
 const PersonnelCard = ({
   personnel,
   index,
@@ -1227,6 +1090,7 @@ const PersonnelCard = ({
   onPrepareUpload,
   onSaveUploadedFiles,
   pendingUploads,
+  uploading,
   onDocumentClick,
   onRemoveDocument,
   medicalRecordType,
@@ -1234,115 +1098,115 @@ const PersonnelCard = ({
   formatDate,
   formatTimestamp,
 }) => {
+  const [selectedCategory, setSelectedCategory] = useState("Medical Record");
+
+  const handleCategoryChange = (e) => {
+    setSelectedCategory(e.target.value);
+  };
+
   const safeRender = (value, defaultValue = "") => {
     if (value === null || value === undefined) return defaultValue;
     if (value instanceof Date) {
-      return isNaN(value.getTime()) ? defaultValue : value.toLocaleDateString();
+      return isNaN(value.getTime()) ? defaultValue : formatDate(value);
     }
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
   };
 
-  const handleCategoryChange = (e) => {
-    console.log("Category changed to:", e.target.value);
-  };
+  const firstName = highlightText(personnel.first_name || "", "first_name");
+  const lastName = highlightText(personnel.last_name || "", "last_name");
+  const rank = highlightText(personnel.rank || "", "rank");
+  const designation = highlightText(personnel.designation || "", "designation");
+  const dateHired = highlightText(formatDate(personnel.date_hired), "date_hired");
+  const retirementDate = highlightText(formatDate(personnel.retirement_date), "retirement_date");
+  const birthDate = formatDate(personnel.birth_date);
 
-  // Format dates with full month names
-  const firstName = highlightText(
-    safeRender(personnel.first_name),
-    "first_name"
-  );
-
-  const lastName = highlightText(safeRender(personnel.last_name), "last_name");
-  const rank = highlightText(safeRender(personnel.rank), "rank");
-  const designation = highlightText(
-    safeRender(personnel.designation),
-    "designation"
-  );
-  const dateHired = highlightText(
-    formatDate(safeRender(personnel.date_hired)), // Apply formatting
-    "date_hired"
-  );
-  const retirementDate = highlightText(
-    formatDate(safeRender(personnel.retirement_date)), // Apply formatting
-    "retirement_date"
-  );
-  const birthDate = formatDate(safeRender(personnel.birth_date)); // Apply formatting
+  const pendingFiles = pendingUploads[index];
+  const hasPendingFiles = pendingFiles && pendingFiles.length > 0;
+  const fileCount = hasPendingFiles ? pendingFiles.length : 0;
 
   return (
     <div className={styles.prePersonnelCard}>
       <div className={styles.preCardHeader}>
         <img
-          src={personnel.photoURL || "/bfp.jpg"}
-          alt={`${safeRender(personnel.first_name)} ${safeRender(
-            personnel.last_name
-          )}`}
+          src={personnel.photo_url || "/bfp.jpg"}
+          alt={`${personnel.first_name} ${personnel.last_name}`}
+          onError={(e) => {
+            e.target.src = "/bfp.jpg";
+          }}
         />
         <div>
-          <h3
-            dangerouslySetInnerHTML={{ __html: `${firstName} ${lastName}` }}
-          />
-          <small
-            dangerouslySetInnerHTML={{ __html: `${rank} – ${designation}` }}
-          />
-          <small>Badge: {safeRender(personnel.badge_number)}</small>
+          <h3 dangerouslySetInnerHTML={{ __html: `${firstName} ${lastName}` }} />
+          <small dangerouslySetInnerHTML={{ __html: `${rank} – ${designation}` }} />
+          <small>Badge: {personnel.badge_number || "N/A"}</small>
         </div>
       </div>
+      
       <div className={styles.preCardBody}>
-        <div>
-          <strong>Station:</strong> {safeRender(personnel.station)}
-        </div>
-        <div>
-          <strong>Birth Date:</strong> {birthDate} {/* Formatted birth date */}
-        </div>
-        <div>
-          <strong>Date Hired:</strong>{" "}
-          <span dangerouslySetInnerHTML={{ __html: dateHired }} />
-        </div>
-        <div>
-          <strong>Retirement:</strong>{" "}
-          <span dangerouslySetInnerHTML={{ __html: retirementDate }} />
-        </div>
+        <div><strong>Station:</strong> {personnel.station || "N/A"}</div>
+        <div><strong>Birth Date:</strong> {birthDate}</div>
+        <div><strong>Date Hired:</strong> <span dangerouslySetInnerHTML={{ __html: dateHired }} /></div>
+        <div><strong>Retirement:</strong> <span dangerouslySetInnerHTML={{ __html: retirementDate }} /></div>
       </div>
+      
       <div className={styles.preCardActions}>
         <div className={styles.preDocumentUpload}>
-          <select id={`doc-category-${index}`} onChange={handleCategoryChange}>
+          <select 
+            id={`doc-category-${index}`} 
+            value={selectedCategory}
+            onChange={handleCategoryChange}
+            disabled={uploading}
+          >
             <option value="Medical Record">Medical Record</option>
             <option value="Award/Commendation">Award/Commendation</option>
             <option value="Others">Others</option>
           </select>
+          
           <div className={styles.preFileUpload}>
             <input
               type="file"
               id={`fileInput-${index}`}
               multiple
               onChange={(e) => onPrepareUpload(e, index)}
+              disabled={uploading}
             />
-            <label htmlFor={`fileInput-${index}`}>📂 Choose Files</label>
+            <label 
+              htmlFor={`fileInput-${index}`} 
+              className={uploading ? styles.disabled : ""}
+            >
+              {uploading ? "⏳ Uploading..." : "📂 Choose Files"}
+            </label>
           </div>
-          {medicalRecordType && (
-            <div className={styles.medicalRecordTypeIndicator}>
-              🩺 Medical Type: {medicalRecordType}
+
+          {hasPendingFiles && (
+            <div className={styles.pendingFilesInfo}>
+              <small>
+                {fileCount} file(s) selected
+                {medicalRecordType && selectedCategory === "Medical Record" && (
+                  <span> • Type: {medicalRecordType}</span>
+                )}
+                {awardType && selectedCategory === "Award/Commendation" && (
+                  <span> • Type: {awardType}</span>
+                )}
+              </small>
             </div>
           )}
-          {awardType && (
-            <div className={styles.awardTypeIndicator}>
-              🏅 Award Type: {awardType}
-            </div>
-          )}
+
           <button
-            className={`${styles.preBtn} ${styles.preSaveFilesBtn}`}
+            className={`${styles.preBtn} ${styles.preSaveFilesBtn} ${uploading ? styles.disabled : ""}`}
             onClick={() => onSaveUploadedFiles(index)}
-            disabled={!pendingUploads[index]}
+            disabled={!hasPendingFiles || uploading}
           >
-            Save Files
+            {uploading ? "Uploading..." : "Save Files"}
           </button>
+          
           <DocumentList
             documents={personnel.documents || []}
             personnel={personnel}
             onDocumentClick={onDocumentClick}
-            onRemoveDocument={onRemoveDocument} // This should now work correctly
+            onRemoveDocument={onRemoveDocument}
             formatTimestamp={formatTimestamp}
+            disabled={uploading}
           />
         </div>
       </div>
@@ -1350,44 +1214,15 @@ const PersonnelCard = ({
   );
 };
 
-
+// DocumentList Component
 const DocumentList = ({
   documents,
   personnel,
   onDocumentClick,
   onRemoveDocument,
   formatTimestamp,
+  disabled = false
 }) => {
-  const safeRender = (value) => {
-    if (value === null || value === undefined) return "N/A";
-    if (value instanceof Date) {
-      return isNaN(value.getTime()) ? "Invalid date" : formatTimestamp(value);
-    }
-    if (typeof value === "object") {
-      try {
-        return JSON.stringify(value);
-      } catch {
-        return "[Object]";
-      }
-    }
-    return String(value);
-  };
-
-  const handleDocumentClick = (doc, personnel) => {
-    let url = doc.url;
-    if ((!url || url === "#") && doc.fileData) {
-      const blob = new Blob([doc.fileData], { type: doc.fileType });
-      url = URL.createObjectURL(blob);
-      doc.url = url;
-    }
-    onDocumentClick({ ...doc, url }, personnel);
-  };
-
-  const handleRemoveClick = (e, docIndex, documentName, documentCategory) => {
-    e.stopPropagation();
-    onRemoveDocument(personnel.id, docIndex, documentName, documentCategory);
-  };
-
   if (!documents || !documents.length) {
     return (
       <div className={styles.preDocumentList}>
@@ -1396,44 +1231,58 @@ const DocumentList = ({
     );
   }
 
+  const getFileIcon = (fileName) => {
+    if (fileName.toLowerCase().endsWith(".pdf")) return "📄";
+    if (fileName.toLowerCase().match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)) return "🖼️";
+    if (fileName.toLowerCase().match(/\.(doc|docx)$/i)) return "📝";
+    if (fileName.toLowerCase().match(/\.(xls|xlsx)$/i)) return "📊";
+    return "📎";
+  };
+
   return (
     <div className={styles.preDocumentList}>
-      {documents.map((doc, docIndex) => (
+      {documents.map((doc) => (
         <div
-          key={docIndex}
-          className={styles.preDocumentItem}
-          onClick={() => handleDocumentClick(doc, personnel)}
+          key={doc.id}
+          className={`${styles.preDocumentItem} ${disabled ? styles.disabled : ""}`}
+          onClick={() => !disabled && onDocumentClick(doc, personnel)}
         >
           <div className={styles.documentContent}>
             <div className={styles.documentInfo}>
-              📎 <strong>[{safeRender(doc.category)}]</strong>
-              <span className={styles.documentName}>
-                {safeRender(doc.name)}
+              <span className={styles.documentIcon}>
+                {getFileIcon(doc.name)}
               </span>
-              {doc.recordType && (
-                <span className={styles.recordTypeBadge}>{doc.recordType}</span>
-              )}
-              <span className={styles.preDocumentMeta}>
-                ({formatTimestamp(doc.uploadedAt)})
-              </span>
-              {(!doc.url || doc.url === "#") && doc.fileData && (
-                <span
-                  className={styles.regeneratedIndicator}
-                  title="URL regenerated"
-                >
-                  🔄
-                </span>
-              )}
+              <div className={styles.documentDetails}>
+                <div className={styles.documentTitle}>
+                  <strong className={styles.documentCategory}>
+                    [{doc.category}]
+                  </strong>
+                  <span className={styles.documentName}>{doc.name}</span>
+                  {doc.record_type && (
+                    <span className={styles.recordTypeBadge}>
+                      {doc.record_type}
+                    </span>
+                  )}
+                </div>
+                <small className={styles.preDocumentMeta}>
+                  {formatTimestamp(doc.uploaded_at)}
+                  {doc.file_size && ` • ${Math.round(doc.file_size / 1024)}KB`}
+                </small>
+              </div>
             </div>
-            <button
-              className={styles.preRemoveBtn}
-              onClick={(e) =>
-                handleRemoveClick(e, docIndex, doc.name, doc.category)
-              }
-              title="Remove document"
-            >
-              ×
-            </button>
+            {!disabled && (
+              <button
+                className={styles.preRemoveBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveDocument(doc);
+                }}
+                title="Remove document"
+                disabled={disabled}
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
       ))}

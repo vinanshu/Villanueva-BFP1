@@ -4,41 +4,74 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
-  const { user, loading } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
 
- // console.log("ProtectedRoute - User:", user, "Required Role:", requiredRole); // Debug log
+  // Debug logs (comment out in production)
+  console.log("ProtectedRoute - User:", user, "Required Role:", requiredRole, "Loading:", loading);
 
+  // Show loading state
   if (loading) {
- //   console.log("ProtectedRoute - Loading..."); // Debug log
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading authentication...</p>
+        </div>
+      </div>
+    );
   }
 
-  if (!user) {
-//    console.log("ProtectedRoute - No user, redirecting to login"); // Debug log
+  // If not authenticated, redirect to login
+  if (!isAuthenticated || !user) {
+    console.log("ProtectedRoute - Not authenticated, redirecting to login");
     return <Navigate to="/" replace />;
   }
 
   // Check if user has the required role
-  if (requiredRole && user.role !== requiredRole) {
- //   console.log( `ProtectedRoute - Role mismatch. User role: ${user.role}, Required: ${requiredRole}`); // Debug log
+  if (requiredRole) {
+    // Normalize roles for comparison
+    const userRole = user.role?.toLowerCase();
+    const requiredRoleNormalized = requiredRole.toLowerCase();
+    
+    console.log(`ProtectedRoute - User role: ${userRole}, Required: ${requiredRoleNormalized}`);
 
-    // Redirect to their role-specific dashboard
-    if (user.role === "admin") {
-     // console.log("Redirecting to /admin"); // Debug log
-      return <Navigate to="/admin" replace />;
-    } else if (user.role === "employee") {
-   //   console.log("Redirecting to /employee"); // Debug log
-      return <Navigate to="/employee" replace />;
-    } else if (user.role === "inspector") {
-       return <Navigate to="/inspectorDashboard" replace />;
+    // Check if role matches
+    const roleMatches = userRole === requiredRoleNormalized;
+    
+    // Special case: inspectors use admin role but have inspector routes
+    if (requiredRoleNormalized === "inspector" && userRole === "admin") {
+      // Check if this is actually an inspector (based on user data)
+      const isInspector = user.personnelData?.admin_role?.toLowerCase() === "inspector" || 
+                          user.username === "inspector";
+      
+      if (!isInspector) {
+        console.log("ProtectedRoute - Not an inspector, redirecting");
+        return <Navigate to="/admin" replace />;
+      }
     }
-    else {
-    //  console.log("Redirecting to login"); // Debug log
+    // Special case: recruitment role check
+    else if (requiredRoleNormalized === "recruitment" && userRole !== "recruitment") {
+      console.log("ProtectedRoute - Not recruitment personnel, redirecting");
       return <Navigate to="/" replace />;
+    }
+    // For all other roles, check exact match
+    else if (!roleMatches && requiredRoleNormalized !== "inspector") {
+      console.log(`ProtectedRoute - Role mismatch, redirecting based on user role: ${userRole}`);
+      
+      // Redirect to appropriate dashboard based on user role
+      if (userRole === "admin") {
+        return <Navigate to="/admin" replace />;
+      } else if (userRole === "employee") {
+        return <Navigate to="/employee" replace />;
+      } else if (userRole === "recruitment") {
+        return <Navigate to="/recruitment" replace />;
+      } else {
+        return <Navigate to="/" replace />;
+      }
     }
   }
 
- // console.log("ProtectedRoute - Access granted"); // Debug log
+  console.log("ProtectedRoute - Access granted");
   return children;
 };
 

@@ -4,7 +4,7 @@ import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
-import { getAllPersonnel, updateRecord, STORE_PERSONNEL } from "./db";
+import { supabase } from "../lib/supabaseClient"; // You'll need to create this
 
 const Promotion = () => {
   const [personnel, setPersonnel] = useState([]);
@@ -38,22 +38,25 @@ const Promotion = () => {
   const loadPromotionData = async () => {
     setLoading(true);
     try {
-      // Get personnel data from IndexedDB
-      const personnelData = await getAllPersonnel();
+      // Get personnel data from Supabase
+      const { data: personnelData, error } = await supabase
+        .from('personnel')
+        .select('*')
+        .eq('is_active', true); // Only load active personnel
+
+      if (error) throw error;
 
       // Transform data to include promotion-specific fields
       const transformedData = personnelData.map((person) => ({
         id: person.id,
-        firstName: person.first_name || person.firstName || "",
-        middleName: person.middle_name || person.middleName || "",
-        lastName: person.last_name || person.lastName || "",
+        firstName: person.first_name || "",
+        middleName: person.middle_name || "",
+        lastName: person.last_name || "",
         rank: person.rank || "FO1",
-        lastRank: person.lastRank || "FO1",
-        photoURL:
-          person.photoURL || person.photo || "https://via.placeholder.com/50",
-        dateHired: person.date_hired || person.dateHired || "",
-        lastPromoted:
-          person.lastPromoted || person.date_hired || person.dateHired || "",
+        lastRank: person.last_rank || person.rank || "FO1", // Use last_rank if available
+        photoURL: person.photo_url || "https://via.placeholder.com/50",
+        dateHired: person.date_hired || "",
+        lastPromoted: person.last_promoted || person.date_hired || "",
         // Add any other fields you need
       }));
 
@@ -278,26 +281,21 @@ const Promotion = () => {
     }
 
     try {
-      // Get the full person data from IndexedDB to update
-      const personnelData = await getAllPersonnel();
-      const fullPerson = personnelData.find((p) => p.id === personId);
-
-      if (!fullPerson) {
-        alert("Personnel record not found in database!");
-        return;
-      }
-
       // Update person data with promotion information
-      const updatedPerson = {
-        ...fullPerson,
-        lastRank: person.rank, // Store current rank as lastRank
+      const updatedData = {
+        last_rank: person.rank, // Store current rank as last_rank
         rank: newRank, // Set new rank
-        lastPromoted: new Date().toISOString().split("T")[0], // Set promotion date
-        updated_at: new Date().toISOString(), // Update timestamp
+        last_promoted: new Date().toISOString().split('T')[0], // Set promotion date
+        updated_at: new Date().toISOString(),
       };
 
-      // Update in IndexedDB
-      await updateRecord(STORE_PERSONNEL, updatedPerson);
+      // Update in Supabase
+      const { error } = await supabase
+        .from('personnel')
+        .update(updatedData)
+        .eq('id', personId);
+
+      if (error) throw error;
 
       // Update local state
       const updatedPersonnel = personnel.map((p) =>
@@ -306,7 +304,7 @@ const Promotion = () => {
               ...p,
               lastRank: person.rank,
               rank: newRank,
-              lastPromoted: new Date().toISOString().split("T")[0],
+              lastPromoted: new Date().toISOString().split('T')[0],
             }
           : p
       );

@@ -30,6 +30,452 @@ top: 6vh;
   margin: 10px 0;
   
 }
+/* Add to LeaveManagement.module.css */
+
+/* Admin notice styling */
+.adminNotice {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.adminNotice span {
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminNotice p {
+  margin: 5px 0 0 0;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+/* Action button containers */
+.actionButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.cardActionButtons {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+/* Processing state */
+.processing {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Improved button styles */
+.leaveApprove {
+  background-color: #10b981;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.leaveApprove:hover:not(:disabled) {
+  background-color: #059669;
+  transform: translateY(-1px);
+}
+
+.leaveReject {
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.leaveReject:hover:not(:disabled) {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.viewBtn {
+  background-color: #6b7280;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.viewBtn:hover {
+  background-color: #4b5563;
+}
+
+/* Modal actions */
+.modalActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.modalActions .leaveApprove,
+.modalActions .leaveReject {
+  flex: 1;
+  padding: 10px;
+  font-size: 14px;
+}
+
+/* Loading spinner */
+.loadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+}
+
+.loadingSpinner {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top: 4px solid #3498db;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Card improvements */
+.leaveCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.leaveCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.leaveCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.leaveCardHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.leaveCardBody {
+  margin-bottom: 16px;
+}
+
+.leaveCardBody p {
+  margin: 6px 0;
+  font-size: 14px;
+  color: #4b5563;
+}
+/* Add to LeaveManagement.module.css */
+
+/* Admin Panel Styling */
+.adminPanel {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.adminInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.adminBadge {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.adminIcon {
+  font-size: 32px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+}
+
+.adminBadge h3 {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.adminBadge p {
+  margin: 4px 0;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.adminCapability {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 6px 12px;
+  border-radius: 20px;
+  margin-top: 8px !important;
+  display: inline-block;
+  font-size: 13px;
+}
+
+.adminStats {
+  display: flex;
+  gap: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 15px 20px;
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.statNumber {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.statLabel {
+  font-size: 13px;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Action buttons */
+.actionButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.cardActionButtons {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.leaveApprove {
+  background-color: #10b981;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  min-width: 100px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.leaveApprove:hover:not(:disabled) {
+  background-color: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.leaveReject {
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  min-width: 100px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.leaveReject:hover:not(:disabled) {
+  background-color: #dc2626;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.viewBtn {
+  background-color: #6b7280;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.viewBtn:hover {
+  background-color: #4b5563;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+}
+
+/* Processing state */
+.processing {
+  opacity: 0.7;
+  cursor: not-allowed !important;
+}
+
+/* Status info */
+.statusInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.approvedBy {
+  font-size: 12px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* Status badges */
+.leavePending {
+  background-color: #fef3c7;
+  color: #92400e;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.leaveApproved {
+  background-color: #d1fae5;
+  color: #065f46;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.leaveRejected {
+  background-color: #fee2e2;
+  color: #991b1b;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Table improvements */
+.leaveTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.leaveTable th {
+  background: #f8fafc;
+  padding: 14px 16px;
+  font-weight: 600;
+  color: #1e293b;
+  border-bottom: 2px solid #e2e8f0;
+  text-align: left;
+}
+
+.leaveTable td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.leaveTable tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .adminInfo {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .adminStats {
+    justify-content: space-around;
+  }
+  
+  .statItem {
+    min-width: auto;
+  }
+  
+  .actionButtons,
+  .cardActionButtons {
+    flex-direction: column;
+  }
+  
+  .leaveApprove,
+  .leaveReject,
+  .viewBtn {
+    min-width: 100%;
+  }
+}
+
+.leaveCardBody strong {
+  color: #1f2937;
+}
 .leaveTable thead tr {
   background: var(--bg-header);
 }

@@ -1,17 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import styles from "./EmployeeLeaveRequest.module.css";
 import Hamburger from "./Hamburger";
 import EmployeeSidebar from "./EmployeeSidebar";
 import { useSidebar } from "./SidebarContext.jsx";
-import { useAuth } from "./AuthContext"; // Import useAuth
+import { useAuth } from "./AuthContext";
 import { Title, Meta } from "react-head";
-
-// Import your actual IndexedDB functions
-import {
-  addRecord,
-  getPersonnelList,
-  STORE_LEAVE,
-} from "./db.jsx";
+import { supabase } from "../lib/supabaseClient";
 
 const EmployeeLeaveRequest = () => {
   const [formData, setFormData] = useState({
@@ -24,9 +18,9 @@ const EmployeeLeaveRequest = () => {
   });
 
   const [leaveBalance, setLeaveBalance] = useState({
-    vacation: 0,
-    sick: 0,
-    emergency: 0,
+    vacation: 15.00,
+    sick: 15.00,
+    emergency: 5.00,
   });
 
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -35,7 +29,10 @@ const EmployeeLeaveRequest = () => {
   const [selectedLocation, setSelectedLocation] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const { isSidebarCollapsed } = useSidebar();
-  const { user, loading: authLoading } = useAuth(); // Get user from AuthContext
+  const { user, loading: authLoading } = useAuth();
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [employeeId, setEmployeeId] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Format date as YYYY-MM-DD
   const formatDate = (date) => {
@@ -55,13 +52,12 @@ const EmployeeLeaveRequest = () => {
     return Math.floor(timeDiff / (1000 * 60 * 60 * 24)) + 1;
   };
 
-  // Load employee data
-  const loadEmployee = async () => {
+  // Load employee data from Supabase
+  const loadEmployeeData = async () => {
     try {
       setIsLoading(true);
-      console.log("Loading employee data...");
+      console.log("Loading employee data from Supabase...");
 
-      // Check if user is authenticated
       if (!user) {
         console.warn("No user found in AuthContext");
         window.location.href = "/index.html";
@@ -70,37 +66,42 @@ const EmployeeLeaveRequest = () => {
 
       console.log("Current user from AuthContext:", user);
 
-      const personnel = await getPersonnelList();
-      console.log("Personnel list:", personnel);
+      // Load employee details
+      const { data: employeeData, error: employeeError } = await supabase
+        .from("personnel")
+        .select("*")
+        .eq("username", user.username)
+        .single();
 
-      // Find employee by username from AuthContext
-      const emp = personnel.find((p) => p.username === user.username);
+      if (employeeError) {
+        console.error("Error loading employee:", employeeError);
+        throw employeeError;
+      }
 
-      if (emp) {
-        console.log("Found employee record:", emp);
-        const middle = emp.middle_name ? ` ${emp.middle_name}` : "";
-        const fullName = `${emp.first_name}${middle} ${emp.last_name}`.trim();
+      if (employeeData) {
+        console.log("Found employee record:", employeeData);
+        
+        // Store employee ID
+        setEmployeeId(employeeData.id);
+        
+        const middle = employeeData.middle_name ? ` ${employeeData.middle_name}` : "";
+        const fullName = `${employeeData.first_name}${middle} ${employeeData.last_name}`.trim();
 
         setFormData((prev) => ({
           ...prev,
           employeeName: fullName,
         }));
 
+        // Set leave balance from employee record
         setLeaveBalance({
-          vacation: emp.earnedVacation || emp.vacationDays || 0,
-          sick: emp.earnedSick || emp.sickDays || 0,
-          emergency: emp.earnedEmergency || emp.emergencyDays || 0,
+          vacation: parseFloat(employeeData.earned_vacation) || 15.00,
+          sick: parseFloat(employeeData.earned_sick) || 15.00,
+          emergency: parseFloat(employeeData.earned_emergency) || 5.00,
         });
-      } else {
-        console.warn("Employee not found in personnel records");
-        // Use name from AuthContext
-        setFormData((prev) => ({
-          ...prev,
-          employeeName: user.name || user.username || "Unknown Employee",
-        }));
       }
     } catch (error) {
       console.error("Error loading employee data:", error);
+      setErrorMessage("Failed to load employee data. Please refresh the page.");
     } finally {
       setIsLoading(false);
     }
@@ -109,7 +110,7 @@ const EmployeeLeaveRequest = () => {
   // Initialize form when user is loaded
   useEffect(() => {
     if (!authLoading && user) {
-      loadEmployee();
+      loadEmployeeData();
 
       const today = formatDate(new Date());
       const minStartDate = new Date();
@@ -123,11 +124,10 @@ const EmployeeLeaveRequest = () => {
         endDate: minStart,
       }));
 
-      // Calculate initial days
       const days = calculateDays(minStart, minStart);
       setFormData((prev) => ({ ...prev, numDays: days }));
     }
-  }, [user, authLoading]); // Add dependencies
+  }, [user, authLoading]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -149,6 +149,8 @@ const EmployeeLeaveRequest = () => {
 
     if (name === "leaveType" && value === "Vacation") {
       setShowLocationModal(true);
+      // Reset chosen location when changing to vacation
+      setChosenLocation("");
     } else if (name === "leaveType") {
       setChosenLocation("");
     }
@@ -158,7 +160,6 @@ const EmployeeLeaveRequest = () => {
       [name]: value,
     }));
 
-    // Update end date minimum when start date changes
     if (name === "startDate" && formData.endDate < value) {
       setFormData((prev) => ({
         ...prev,
@@ -177,74 +178,192 @@ const EmployeeLeaveRequest = () => {
     }
   };
 
-  // Handle form submission
+  // Close location modal without selecting
+  const handleCloseLocationModal = () => {
+    setShowLocationModal(false);
+    // If they close without selecting, reset leave type
+    if (formData.leaveType === "Vacation") {
+      setFormData(prev => ({ ...prev, leaveType: "" }));
+    }
+    setSelectedLocation("");
+  };
+
+  // Simple direct insert function without .select()
+  const submitLeaveRequest = async (leaveRequestData) => {
+    try {
+      console.log("Attempting to submit leave request:", leaveRequestData);
+      
+      // Try simple insert without .select() first
+      const { error } = await supabase
+        .from("leave_requests")
+        .insert([leaveRequestData]);
+
+      if (error) {
+        console.error("Error with simple insert:", error);
+        throw error;
+      }
+
+      console.log("Leave request submitted successfully (simple insert)");
+      return { success: true };
+      
+    } catch (error) {
+      console.error("Error in submitLeaveRequest:", error);
+      
+      // If first method fails, try with timeout
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
+        const response = await fetch(`${supabase.supabaseUrl}/rest/v1/leave_requests`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabase.supabaseKey,
+            'Authorization': `Bearer ${supabase.supabaseKey}`
+          },
+          body: JSON.stringify(leaveRequestData),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log("Leave request submitted via fetch:", data);
+        return { success: true, data };
+        
+      } catch (fetchError) {
+        console.error("Error with fetch method:", fetchError);
+        throw fetchError;
+      }
+    }
+  };
+
+  // Handle form submission to Supabase
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitLoading(true);
+    setErrorMessage("");
 
     if (!user) {
       alert("Please log in to submit a leave request.");
       window.location.href = "/index.html";
+      setSubmitLoading(false);
       return;
     }
 
     // Validate form data
     if (!formData.leaveType) {
       alert("Please select a leave type.");
+      setSubmitLoading(false);
       return;
     }
 
+    // For vacation leave, location is required
     if (formData.leaveType === "Vacation" && !chosenLocation) {
       alert("Please select a location for vacation leave.");
+      setShowLocationModal(true);
+      setSubmitLoading(false);
       return;
     }
 
-    const leaveRequest = {
-      id: Date.now(),
-      username: user.username,
-      employeeName: formData.employeeName,
-      dateOfFiling: formData.dateOfFiling,
-      leaveType: formData.leaveType,
-      location: chosenLocation,
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      numDays: formData.numDays,
-      status: "Pending",
-      submittedAt: new Date().toISOString(),
-    };
+    // Validate dates
+    if (!formData.startDate || !formData.endDate) {
+      alert("Please select both start and end dates.");
+      setSubmitLoading(false);
+      return;
+    }
+
+    // Validate that numDays is a positive number
+    if (!formData.numDays || formData.numDays <= 0) {
+      alert("Please enter a valid number of days.");
+      setSubmitLoading(false);
+      return;
+    }
 
     try {
-      console.log("Submitting leave request:", leaveRequest);
-      
-      // Use the actual IndexedDB function
-      await addRecord(STORE_LEAVE, leaveRequest);
+      console.log("Submitting leave request...");
+      console.log("Form data:", formData);
+      console.log("Employee ID:", employeeId);
+      console.log("Username:", user.username);
+      console.log("Location:", chosenLocation);
+      console.log("Number of days:", formData.numDays);
 
-      // Show success toast
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
+      // Prepare the data object
+      const leaveRequestData = {
+        personnel_id: employeeId,
+        username: user.username,
+        employee_name: formData.employeeName,
+        leave_type: formData.leaveType,
+        location: formData.leaveType === "Vacation" ? chosenLocation : null,
+        date_of_filing: formData.dateOfFiling,
+        start_date: formData.startDate,
+        end_date: formData.endDate,
+        num_days: parseInt(formData.numDays),
+        status: 'Pending',
+        reason: `Leave request for ${formData.leaveType.toLowerCase()} leave`,
+        submitted_at: new Date().toISOString()
+      };
 
-      // Reset form
-      const today = formatDate(new Date());
-      const minStartDate = new Date();
-      minStartDate.setDate(minStartDate.getDate() + 5);
-      const minStart = formatDate(minStartDate);
+      console.log("Sending data to Supabase:", leaveRequestData);
 
-      setFormData({
-        employeeName: formData.employeeName,
-        dateOfFiling: today,
-        leaveType: "",
-        startDate: minStart,
-        endDate: minStart,
-        numDays: calculateDays(minStart, minStart),
-      });
+      // Submit the leave request
+      const result = await submitLeaveRequest(leaveRequestData);
 
-      setChosenLocation("");
-      setSelectedLocation("");
+      if (result.success) {
+        console.log("Leave request submitted successfully");
 
-      console.log("Leave request submitted successfully!");
+        // Show success toast
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+
+        // Reset form
+        const today = formatDate(new Date());
+        const minStartDate = new Date();
+        minStartDate.setDate(minStartDate.getDate() + 5);
+        const minStart = formatDate(minStartDate);
+
+        setFormData({
+          employeeName: formData.employeeName,
+          dateOfFiling: today,
+          leaveType: "",
+          startDate: minStart,
+          endDate: minStart,
+          numDays: calculateDays(minStart, minStart),
+        });
+
+        setChosenLocation("");
+        setSelectedLocation("");
+
+        // Clear any previous error messages
+        setErrorMessage("");
+      }
 
     } catch (error) {
       console.error("Error saving leave request:", error);
-      alert("Failed to submit leave request. Please try again.");
+      
+      let errorMsg = "Failed to submit leave request. Please try again.";
+      
+      if (error.message?.includes("network") || error.message?.includes("connection")) {
+        errorMsg = "Network error. Please check your internet connection and try again.";
+      } else if (error.message?.includes("timeout")) {
+        errorMsg = "Request timed out. Please try again.";
+      } else if (error.code === '23503') {
+        errorMsg = "Employee not found in database. Please contact administrator.";
+      } else if (error.code === '23502') {
+        errorMsg = "Missing required field. Please fill all required fields.";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setErrorMessage(errorMsg);
+      alert(errorMsg);
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
@@ -266,6 +385,8 @@ const EmployeeLeaveRequest = () => {
 
     setChosenLocation("");
     setSelectedLocation("");
+    setShowLocationModal(false);
+    setErrorMessage("");
   };
 
   // Calculate progress percentages
@@ -303,6 +424,14 @@ const EmployeeLeaveRequest = () => {
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <div className={styles.leaveFormContainer}>
           <h2 className={styles.pageTitle}>Request Leave</h2>
+
+          {/* Error Message Display */}
+          {errorMessage && (
+            <div className={styles.errorMessage}>
+              <span className={styles.errorIcon}>⚠️</span>
+              {errorMessage}
+            </div>
+          )}
 
           <div className={styles.contentWrapper}>
             {/* Leave Balance Card */}
@@ -386,14 +515,17 @@ const EmployeeLeaveRequest = () => {
                     value={formData.leaveType}
                     onChange={handleInputChange}
                     required
+                    disabled={submitLoading}
                   >
                     <option value="" disabled hidden></option>
                     <option value="Vacation">Vacation Leave</option>
                     <option value="Sick">Sick Leave</option>
                     <option value="Emergency">Emergency Leave</option>
+                    <option value="Maternity">Maternity Leave</option>
+                    <option value="Paternity">Paternity Leave</option>
                   </select>
                   <label>Leave Type</label>
-                  {chosenLocation && (
+                  {chosenLocation && formData.leaveType === "Vacation" && (
                     <small className={styles.chosenLocation}>
                       Location: {chosenLocation}
                     </small>
@@ -412,6 +544,7 @@ const EmployeeLeaveRequest = () => {
                     min={formatDate(
                       new Date(new Date().setDate(new Date().getDate() + 5))
                     )}
+                    disabled={submitLoading}
                   />
                   <label>Start Date</label>
                 </div>
@@ -426,6 +559,7 @@ const EmployeeLeaveRequest = () => {
                     placeholder=" "
                     required
                     min={formData.startDate}
+                    disabled={submitLoading}
                   />
                   <label>End Date</label>
                 </div>
@@ -449,11 +583,16 @@ const EmployeeLeaveRequest = () => {
                   type="button"
                   onClick={handleReset}
                   className={styles.btnSecondary}
+                  disabled={submitLoading}
                 >
                   Cancel
                 </button>
-                <button type="submit" className={styles.btnPrimary}>
-                  Submit Request
+                <button 
+                  type="submit" 
+                  className={styles.btnPrimary}
+                  disabled={submitLoading}
+                >
+                  {submitLoading ? "Submitting..." : "Submit Request"}
                 </button>
               </div>
             </form>
@@ -469,17 +608,18 @@ const EmployeeLeaveRequest = () => {
           <div className={styles.modalContent}>
             <span
               className={styles.closeBtn}
-              onClick={() => setShowLocationModal(false)}
+              onClick={handleCloseLocationModal}
             >
               &times;
             </span>
-            <h3>Select Location</h3>
+            <h3>Select Location for Vacation Leave</h3>
             <div className={styles.modalRadioOptions}>
               <label>
                 <input
                   type="radio"
                   name="location"
                   value="Abroad"
+                  checked={selectedLocation === "Abroad"}
                   onChange={(e) => setSelectedLocation(e.target.value)}
                 />
                 Abroad
@@ -489,6 +629,7 @@ const EmployeeLeaveRequest = () => {
                   type="radio"
                   name="location"
                   value="Philippines"
+                  checked={selectedLocation === "Philippines"}
                   onChange={(e) => setSelectedLocation(e.target.value)}
                 />
                 Philippines
@@ -498,8 +639,9 @@ const EmployeeLeaveRequest = () => {
               <button
                 onClick={handleConfirmLocation}
                 className={styles.btnPrimary}
+                disabled={!selectedLocation}
               >
-                Confirm
+                Confirm Location
               </button>
             </div>
           </div>
@@ -507,7 +649,7 @@ const EmployeeLeaveRequest = () => {
 
         {/* Toast Notification */}
         <div className={`${styles.toast} ${showToast ? styles.toastShow : ""}`}>
-          Leave request submitted successfully!
+          ✅ Leave request submitted successfully!
         </div>
       </div>
     </div>

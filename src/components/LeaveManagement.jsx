@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { openDB, getAll, updateRecord, STORE_LEAVE } from "./db.jsx";
 import styles from "./LeaveManagement.module.css";
 import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
+import { supabase } from "../lib/supabaseClient";
 
 const LeaveManagement = () => {
   const { isSidebarCollapsed } = useSidebar();
@@ -16,33 +16,169 @@ const LeaveManagement = () => {
   const [searchValue, setSearchValue] = useState("");
   const [filterValue, setFilterValue] = useState("All");
   const [modalData, setModalData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [processingAction, setProcessingAction] = useState(null);
+  
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminUsername, setAdminUsername] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
 
   const rowsPerPage = 5;
   const rowsPerPageCards = 4;
 
-  // Load leave requests on component mount
   useEffect(() => {
-    loadLeaveRequests();
+    const initialize = async () => {
+      await checkIfAdmin();
+      await loadLeaveRequests();
+    };
+    
+    initialize();
+    
+    const channel = supabase
+      .channel('leave-requests-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'leave_requests' }, 
+        () => {
+          loadLeaveRequests();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
     applyFilterAndSearch();
   }, [searchValue, filterValue, leaveRequests]);
 
-  // Load leave requests from IndexedDB
-  const loadLeaveRequests = async () => {
-    try {
-      console.log("Loading leave requests from IndexedDB...");
-      const leaves = await getAll(STORE_LEAVE);
-      console.log("Loaded leave requests:", leaves);
-      setLeaveRequests(leaves);
-      setFilteredRequests(leaves);
-    } catch (err) {
-      console.error("Error loading leave requests:", err);
+  // Enhanced admin check with better debugging
+  const checkIfAdmin = () => {
+    console.log("🔍 Checking admin status...");
+    
+    // Check localStorage
+    const currentUserData = localStorage.getItem('currentUser');
+    const isAdminFlag = localStorage.getItem('isAdmin');
+    
+    console.log("localStorage currentUser:", currentUserData);
+    console.log("localStorage isAdmin:", isAdminFlag);
+    
+    if (currentUserData) {
+      try {
+        const user = JSON.parse(currentUserData);
+        console.log("Parsed user data:", user);
+        
+        setCurrentUser(user);
+        
+        // Check multiple conditions for admin
+        const userIsAdmin = 
+          user.username === "admin" || 
+          user.username === "inspector" || 
+          user.role === "admin" ||
+          isAdminFlag === 'true' ||
+          (user.personnelData && user.personnelData.is_admin === true);
+        
+        console.log("User is admin?", userIsAdmin);
+        
+        if (userIsAdmin) {
+          setIsAdmin(true);
+          setAdminUsername(user.username || "Admin");
+          console.log("✅ User authenticated as ADMIN:", user.username);
+        } else {
+          setIsAdmin(false);
+          console.log("❌ User is NOT admin");
+        }
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+        setIsAdmin(false);
+      }
+    } else {
+      setIsAdmin(false);
+      console.log("⚠️ No user data found in localStorage");
     }
   };
 
-  // Apply search + filter
+  const loadLeaveRequests = async () => {
+    try {
+      setLoading(true);
+      console.log("Loading leave requests...");
+      console.log("Current admin status:", isAdmin);
+      console.log("Admin username:", adminUsername);
+      
+      let query = supabase
+        .from("leave_requests")
+        .select(`
+          *,
+          personnel:personnel_id (
+            first_name,
+            last_name,
+            rank,
+            station,
+            username,
+            email,
+            is_admin,
+            can_approve_leaves
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      // If not admin, filter by current user
+      if (!isAdmin) {
+        console.log("Filtering by current user (non-admin)");
+        if (currentUser && currentUser.username) {
+          query = query.eq("username", currentUser.username);
+          console.log("Filtering by username:", currentUser.username);
+        }
+      } else {
+        console.log("Admin mode: Showing ALL requests");
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Error loading leave requests:", error);
+        return;
+      }
+
+      console.log(`✅ Loaded ${data?.length} leave requests`);
+
+      const transformedData = data.map(item => {
+        const personnel = item.personnel || {};
+        const employeeName = item.employee_name || 
+          `${personnel.first_name || ''} ${personnel.last_name || ''}`.trim() || 
+          item.username || 
+          "Unknown Employee";
+        
+        return {
+          id: item.id,
+          personnel_id: item.personnel_id,
+          username: item.username || personnel.username || "Unknown",
+          employeeName: employeeName,
+          leaveType: item.leave_type,
+          startDate: item.start_date ? new Date(item.start_date).toISOString().split('T')[0] : "N/A",
+          endDate: item.end_date ? new Date(item.end_date).toISOString().split('T')[0] : "N/A",
+          numDays: item.num_days,
+          location: item.location || personnel.station || "-",
+          status: item.status || "Pending",
+          dateOfFiling: item.date_of_filing ? new Date(item.date_of_filing).toISOString().split('T')[0] : "N/A",
+          submittedAt: item.submitted_at,
+          createdAt: item.created_at,
+          updated_at: item.updated_at,
+          approved_by: item.approved_by || null,
+          reason: item.reason || null
+        };
+      });
+
+      setLeaveRequests(transformedData);
+      setFilteredRequests(transformedData);
+    } catch (err) {
+      console.error("Error loading leave requests:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const applyFilterAndSearch = () => {
     const filtered = leaveRequests.filter((req) => {
       const statusMatch =
@@ -66,43 +202,131 @@ const LeaveManagement = () => {
   };
 
   const updateStatus = async (id, newStatus) => {
-    const req = leaveRequests.find((r) => r.id === id);
-    if (!req) return;
+    console.log(`🔄 Updating status for ${id} to ${newStatus}`);
+    
+    if (!isAdmin) {
+      alert("❌ Only administrators can update leave request status.");
+      return;
+    }
+
+    setProcessingAction(id);
 
     try {
-      const updatedReq = { ...req, status: newStatus };
-      await updateRecord(STORE_LEAVE, updatedReq);
+      const { data: currentRequest, error: fetchError } = await supabase
+        .from("leave_requests")
+        .select("status, personnel_id, leave_type, num_days, username")
+        .eq("id", id)
+        .single();
 
-      // Update leave balance if approved
+      if (fetchError) {
+        console.error("Error fetching request:", fetchError);
+        throw fetchError;
+      }
+
+      if (currentRequest.status !== "Pending") {
+        alert(`⚠️ This leave request has already been ${currentRequest.status.toLowerCase()}.`);
+        setProcessingAction(null);
+        await loadLeaveRequests();
+        return;
+      }
+
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        approved_by: adminUsername || "Admin"
+      };
+
+      if (newStatus === "Rejected") {
+        const reason = prompt("Please enter a reason for rejection (optional):");
+        if (reason !== null) {
+          updateData.reason = reason;
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from("leave_requests")
+        .update(updateData)
+        .eq("id", id)
+        .eq("status", "Pending");
+
+      if (updateError) {
+        console.error("Error updating request:", updateError);
+        throw updateError;
+      }
+
+      console.log("✅ Status updated successfully");
+
       if (newStatus === "Approved") {
-        const allPersonnel = await getAll("personnel");
-        const employee = allPersonnel.find(
-          (p) => p.username === req.username || p.id === req.employeeId
-        );
-        if (employee) {
-          const keyMap = {
-            vacation: "earnedVacation",
-            sick: "earnedSick",
-            emergency: "earnedEmergency",
-          };
-          const key = keyMap[req.leaveType?.toLowerCase()];
-          if (key && employee[key] != null) {
-            employee[key] = Math.max(
+        console.log("📊 Updating leave balance for approved request");
+        
+        const { data: employee, error: employeeError } = await supabase
+          .from("personnel")
+          .select("earned_vacation, earned_sick, earned_emergency")
+          .eq("id", currentRequest.personnel_id)
+          .single();
+
+        if (!employeeError && employee) {
+          const balanceUpdateData = {};
+          const leaveType = currentRequest.leave_type.toLowerCase();
+          
+          if (leaveType === "vacation" && employee.earned_vacation != null) {
+            balanceUpdateData.earned_vacation = Math.max(
               0,
-              employee[key] - Number(req.numDays || 0)
+              parseFloat(employee.earned_vacation) - parseFloat(currentRequest.num_days)
             );
-            await updateRecord("personnel", employee);
+            console.log(`Updated vacation leave: ${employee.earned_vacation} - ${currentRequest.num_days} = ${balanceUpdateData.earned_vacation}`);
+          } else if (leaveType === "sick" && employee.earned_sick != null) {
+            balanceUpdateData.earned_sick = Math.max(
+              0,
+              parseFloat(employee.earned_sick) - parseFloat(currentRequest.num_days)
+            );
+            console.log(`Updated sick leave: ${employee.earned_sick} - ${currentRequest.num_days} = ${balanceUpdateData.earned_sick}`);
+          } else if (leaveType === "emergency" && employee.earned_emergency != null) {
+            balanceUpdateData.earned_emergency = Math.max(
+              0,
+              parseFloat(employee.earned_emergency) - parseFloat(currentRequest.num_days)
+            );
+            console.log(`Updated emergency leave: ${employee.earned_emergency} - ${currentRequest.num_days} = ${balanceUpdateData.earned_emergency}`);
+          }
+
+          if (Object.keys(balanceUpdateData).length > 0) {
+            const { error: balanceError } = await supabase
+              .from("personnel")
+              .update(balanceUpdateData)
+              .eq("id", currentRequest.personnel_id);
+
+            if (balanceError) {
+              console.error("Error updating leave balance:", balanceError);
+            } else {
+              console.log("✅ Leave balance updated successfully");
+            }
           }
         }
       }
 
-      await loadLeaveRequests(); // Reload to show updated status
+      alert(`✅ Leave request has been ${newStatus.toLowerCase()} successfully!`);
+      await loadLeaveRequests();
+      
     } catch (err) {
       console.error("Error updating status:", err);
+      alert("❌ Error updating leave request status. Please try again.");
+    } finally {
+      setProcessingAction(null);
     }
   };
 
-  // Pagination logic
+  const handleApprove = async (id, employeeName) => {
+    if (window.confirm(`✅ Are you sure you want to APPROVE the leave request for ${employeeName}?`)) {
+      await updateStatus(id, "Approved");
+    }
+  };
+
+  const handleReject = async (id, employeeName) => {
+    if (window.confirm(`❌ Are you sure you want to REJECT the leave request for ${employeeName}?`)) {
+      await updateStatus(id, "Rejected");
+    }
+  };
+
   const paginate = (data, page, rows) => {
     const start = (page - 1) * rows;
     return data.slice(start, start + rows);
@@ -114,7 +338,6 @@ const LeaveManagement = () => {
 
     const buttons = [];
 
-    // Previous button
     buttons.push(
       <button
         key="prev"
@@ -128,7 +351,6 @@ const LeaveManagement = () => {
       </button>
     );
 
-    // Always show first page
     buttons.push(
       <button
         key={1}
@@ -142,7 +364,6 @@ const LeaveManagement = () => {
       </button>
     );
 
-    // Show ellipsis after first page if needed
     if (page > 3) {
       buttons.push(
         <span key="ellipsis1" className={styles.leavePaginationEllipsis}>
@@ -151,21 +372,17 @@ const LeaveManagement = () => {
       );
     }
 
-    // Show pages around current page (max 5 pages total including first and last)
     let startPage = Math.max(2, page - 1);
     let endPage = Math.min(pageCount - 1, page + 1);
 
-    // Adjust if we're near the beginning
     if (page <= 3) {
       endPage = Math.min(pageCount - 1, 4);
     }
 
-    // Adjust if we're near the end
     if (page >= pageCount - 2) {
       startPage = Math.max(2, pageCount - 3);
     }
 
-    // Generate middle page buttons
     for (let i = startPage; i <= endPage; i++) {
       if (i > 1 && i < pageCount) {
         buttons.push(
@@ -183,7 +400,6 @@ const LeaveManagement = () => {
       }
     }
 
-    // Show ellipsis before last page if needed
     if (page < pageCount - 2) {
       buttons.push(
         <span key="ellipsis2" className={styles.leavePaginationEllipsis}>
@@ -192,7 +408,6 @@ const LeaveManagement = () => {
       );
     }
 
-    // Always show last page if there is more than 1 page
     if (pageCount > 1) {
       buttons.push(
         <button
@@ -208,7 +423,6 @@ const LeaveManagement = () => {
       );
     }
 
-    // Next button
     buttons.push(
       <button
         key="next"
@@ -225,13 +439,40 @@ const LeaveManagement = () => {
     return buttons;
   };
 
-  // Get status badge class
   const getStatusClass = (status) => {
     const statusClass = status?.toLowerCase() || "";
     return `${styles.leave}${
       statusClass.charAt(0).toUpperCase() + statusClass.slice(1)
     }`;
   };
+
+  const formatDate = (dateString) => {
+    if (!dateString || dateString === "N/A") return "N/A";
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch (error) {
+      return "Invalid Date";
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="app-container">
+        <Hamburger />
+        <Sidebar />
+        <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
+          <div className={styles.loadingContainer}>
+            <div className={styles.loadingSpinner}></div>
+            <p>Loading leave requests...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -242,8 +483,41 @@ const LeaveManagement = () => {
 
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <h1>Leave Management</h1>
+        
+        {/* Debug info - remove in production */}
+        <div style={{
+          background: '#f0f0f0',
+          padding: '10px',
+          borderRadius: '5px',
+          marginBottom: '20px',
+          fontSize: '12px'
+        }}>
+          <strong>Debug Info:</strong> 
+          Admin: {isAdmin ? '✅ YES' : '❌ NO'} | 
+          Username: {currentUser?.username || 'None'} | 
+          Role: {currentUser?.role || 'None'} |
+          Total Requests: {leaveRequests.length}
+        </div>
+        
+        {/* Simple admin indicator */}
+        {isAdmin && (
+          <div className={styles.adminIndicator}>
+            <span className={styles.adminBadge}>ADMIN</span>
+            <p>You are logged in as an administrator. You can approve or reject leave requests.</p>
+            <p><small>Logged in as: <strong>{currentUser?.name || adminUsername}</strong></small></p>
+          </div>
+        )}
 
-        {/* Filter/Search */}
+        {/* Simple user notice */}
+        {!isAdmin && (
+          <div className={styles.userNotice}>
+            <p>You are viewing your own leave requests. Only administrators can approve or reject requests.</p>
+            {currentUser && (
+              <p><small>Logged in as: <strong>{currentUser.name || currentUser.username}</strong></small></p>
+            )}
+          </div>
+        )}
+
         <div className={styles.leaveFilterSearchWrapper}>
           <div className={styles.leaveFilterGroup}>
             <label htmlFor="leaveStatusFilter">Filter by Status:</label>
@@ -275,100 +549,126 @@ const LeaveManagement = () => {
           🔄 Switch to {currentView === "table" ? "Card" : "Table"} View
         </button>
 
-        {/* Table View */}
         {currentView === "table" && (
           <>
-            <table className={styles.leaveTable}>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Type</th>
-                  <th>Location</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Days</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRequests.length > 0 ? (
-                  paginate(filteredRequests, currentPage, rowsPerPage).map(
-                    (req) => {
-                      const statusClass = getStatusClass(req.status);
-                      return (
-                        <tr key={req.id}>
-                          <td>{req.employeeName || "Unknown"}</td>
-                          <td>{req.leaveType || "N/A"}</td>
-                          <td>{req.location || "-"}</td>
-                          <td>{req.startDate || "N/A"}</td>
-                          <td>{req.endDate || "N/A"}</td>
-                          <td>{req.numDays || 0}</td>
-                          <td className={statusClass}>
-                            {req.status || "Pending"}
-                          </td>
-                          <td className={styles.leaveActions}>
-                            {req.status?.toLowerCase() === "pending" ||
-                            !req.status ? (
-                              <>
-                                <button
-                                  className={styles.leaveApprove}
-                                  onClick={() =>
-                                    updateStatus(req.id, "Approved")
-                                  }
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  className={styles.leaveReject}
-                                  onClick={() =>
-                                    updateStatus(req.id, "Rejected")
-                                  }
-                                >
-                                  Reject
-                                </button>
-                              </>
-                            ) : (
-                              <button onClick={() => setModalData(req)}>
-                                View
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    }
-                  )
-                ) : (
+            <div className={styles.tableWrapper}>
+              <table className={styles.leaveTable}>
+                <thead>
                   <tr>
-                    <td colSpan="8" className={styles.leaveNoRequestsTable}>
-                      <div style={{ fontSize: "48px", marginBottom: "16px" }}>
-                        📭
-                      </div>
-                      <h3
-                        style={{
-                          fontSize: "18px",
-                          fontWeight: "600",
-                          color: "#2b2b2b",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        No Leave Requests Found
-                      </h3>
-                      <p
-                        style={{
-                          fontSize: "14px",
-                          color: "#999",
-                        }}
-                      >
-                        Try adjusting your search or filter criteria
-                      </p>
-                    </td>
+                    <th>Employee</th>
+                    <th>Type</th>
+                    <th>Location</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Days</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredRequests.length > 0 ? (
+                    paginate(filteredRequests, currentPage, rowsPerPage).map(
+                      (req) => {
+                        const statusClass = getStatusClass(req.status);
+                        const isProcessing = processingAction === req.id;
+                        const isPending = req.status?.toLowerCase() === "pending";
+                        
+                        return (
+                          <tr key={req.id}>
+                            <td>{req.employeeName || "Unknown"}</td>
+                            <td>{req.leaveType || "N/A"}</td>
+                            <td>{req.location || "-"}</td>
+                            <td>{formatDate(req.startDate)}</td>
+                            <td>{formatDate(req.endDate)}</td>
+                            <td>{req.numDays || 0}</td>
+                            <td className={statusClass}>
+                              {req.status || "Pending"}
+                            </td>
+                            <td className={styles.leaveActions}>
+                              {isAdmin && isPending ? (
+                                <div className={styles.actionButtons}>
+                                  <button
+                                    className={`${styles.leaveApprove} ${isProcessing ? styles.processing : ''}`}
+                                    onClick={() => handleApprove(req.id, req.employeeName)}
+                                    disabled={isProcessing}
+                                    title="Approve this leave request"
+                                  >
+                                    {isProcessing ? "Processing..." : "✓ Approve"}
+                                  </button>
+                                  <button
+                                    className={`${styles.leaveReject} ${isProcessing ? styles.processing : ''}`}
+                                    onClick={() => handleReject(req.id, req.employeeName)}
+                                    disabled={isProcessing}
+                                    title="Reject this leave request"
+                                  >
+                                    {isProcessing ? "Processing..." : "✗ Reject"}
+                                  </button>
+                                  <button 
+                                    className={styles.viewBtn}
+                                    onClick={() => setModalData(req)}
+                                    title="View details"
+                                  >
+                                    👁 View
+                                  </button>
+                                </div>
+                              ) : !isPending ? (
+                                <div className={styles.statusInfo}>
+                                  <button 
+                                    className={styles.viewBtn}
+                                    onClick={() => setModalData(req)}
+                                  >
+                                    👁 View
+                                  </button>
+                                  {req.approved_by && (
+                                    <span className={styles.approvedBy}>
+                                      By: {req.approved_by}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <button 
+                                  className={styles.viewBtn}
+                                  onClick={() => setModalData(req)}
+                                >
+                                  👁 View
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )
+                  ) : (
+                    <tr>
+                      <td colSpan="8" className={styles.leaveNoRequestsTable}>
+                        <div style={{ fontSize: "48px", marginBottom: "16px" }}>
+                          📭
+                        </div>
+                        <h3
+                          style={{
+                            fontSize: "18px",
+                            fontWeight: "600",
+                            color: "#2b2b2b",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          No Leave Requests Found
+                        </h3>
+                        <p
+                          style={{
+                            fontSize: "14px",
+                            color: "#999",
+                          }}
+                        >
+                          Try adjusting your search or filter criteria
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-            {/* Pagination */}
             <div className={styles.leavePaginationContainer1}>
               {renderPaginationButtons(
                 currentPage,
@@ -379,7 +679,6 @@ const LeaveManagement = () => {
           </>
         )}
 
-        {/* Card View */}
         {currentView === "cards" && (
           <>
             <div id={styles.leaveCards} className={styles.leaveCards}>
@@ -398,6 +697,9 @@ const LeaveManagement = () => {
                   rowsPerPageCards
                 ).map((req) => {
                   const statusClass = getStatusClass(req.status);
+                  const isProcessing = processingAction === req.id;
+                  const isPending = req.status?.toLowerCase() === "pending";
+                  
                   return (
                     <div key={req.id} className={styles.leaveCard}>
                       <div className={styles.leaveCardHeader}>
@@ -414,37 +716,52 @@ const LeaveManagement = () => {
                           <strong>Location:</strong> {req.location || "-"}
                         </p>
                         <p>
-                          <strong>Duration:</strong> {req.startDate} to{" "}
-                          {req.endDate}
+                          <strong>Duration:</strong> {formatDate(req.startDate)} to{" "}
+                          {formatDate(req.endDate)}
                         </p>
                         <p>
                           <strong>Days:</strong> {req.numDays || 0}
                         </p>
                         <p>
                           <strong>Filed:</strong>{" "}
-                          {req.dateOfFiling || "Unknown"}
+                          {formatDate(req.dateOfFiling) || "Unknown"}
                         </p>
+                        {req.approved_by && req.status !== "Pending" && (
+                          <p>
+                            <strong>Processed by:</strong> {req.approved_by}
+                          </p>
+                        )}
                       </div>
                       <div className={styles.leaveCardActions}>
-                        {req.status?.toLowerCase() === "pending" ||
-                        !req.status ? (
-                          <>
+                        {isAdmin && isPending ? (
+                          <div className={styles.cardActionButtons}>
                             <button
-                              className={styles.leaveApprove}
-                              onClick={() => updateStatus(req.id, "Approved")}
+                              className={`${styles.leaveApprove} ${isProcessing ? styles.processing : ''}`}
+                              onClick={() => handleApprove(req.id, req.employeeName)}
+                              disabled={isProcessing}
                             >
-                              Approve
+                              {isProcessing ? "Processing..." : "✓ Approve"}
                             </button>
                             <button
-                              className={styles.leaveReject}
-                              onClick={() => updateStatus(req.id, "Rejected")}
+                              className={`${styles.leaveReject} ${isProcessing ? styles.processing : ''}`}
+                              onClick={() => handleReject(req.id, req.employeeName)}
+                              disabled={isProcessing}
                             >
-                              Reject
+                              {isProcessing ? "Processing..." : "✗ Reject"}
                             </button>
-                          </>
+                            <button 
+                              className={styles.viewBtn}
+                              onClick={() => setModalData(req)}
+                            >
+                              👁 Details
+                            </button>
+                          </div>
                         ) : (
-                          <button onClick={() => setModalData(req)}>
-                            View Details
+                          <button 
+                            className={styles.viewBtn}
+                            onClick={() => setModalData(req)}
+                          >
+                            👁 View Details
                           </button>
                         )}
                       </div>
@@ -454,7 +771,6 @@ const LeaveManagement = () => {
               )}
             </div>
 
-            {/* Pagination */}
             <div className={styles.leavePaginationContainer}>
               {renderPaginationButtons(
                 currentPageCards,
@@ -465,7 +781,6 @@ const LeaveManagement = () => {
           </>
         )}
 
-        {/* Modal */}
         {modalData && (
           <div
             className={`${styles.leaveModal} ${styles.leaveActive}`}
@@ -493,16 +808,16 @@ const LeaveManagement = () => {
                   <b>Location:</b> {modalData.location || "-"}
                 </p>
                 <p>
-                  <b>Start Date:</b> {modalData.startDate || "N/A"}
+                  <b>Start Date:</b> {formatDate(modalData.startDate) || "N/A"}
                 </p>
                 <p>
-                  <b>End Date:</b> {modalData.endDate || "N/A"}
+                  <b>End Date:</b> {formatDate(modalData.endDate) || "N/A"}
                 </p>
                 <p>
                   <b>Number of Days:</b> {modalData.numDays || 0}
                 </p>
                 <p>
-                  <b>Date of Filing:</b> {modalData.dateOfFiling || "Unknown"}
+                  <b>Date of Filing:</b> {formatDate(modalData.dateOfFiling) || "Unknown"}
                 </p>
                 <p>
                   <b>Status:</b>{" "}
@@ -510,13 +825,50 @@ const LeaveManagement = () => {
                     {modalData.status || "Pending"}
                   </span>
                 </p>
-                {modalData.submittedAt && (
+                {modalData.username && (
                   <p>
-                    <b>Submitted At:</b>{" "}
-                    {new Date(modalData.submittedAt).toLocaleString()}
+                    <b>Username:</b> {modalData.username}
+                  </p>
+                )}
+                {modalData.approved_by && (
+                  <p>
+                    <b>Processed by:</b> {modalData.approved_by}
+                  </p>
+                )}
+                {modalData.reason && (
+                  <p>
+                    <b>Reason for rejection:</b> {modalData.reason}
+                  </p>
+                )}
+                {modalData.updated_at && (
+                  <p>
+                    <b>Last Updated:</b>{" "}
+                    {new Date(modalData.updated_at).toLocaleString()}
                   </p>
                 )}
               </div>
+              {isAdmin && modalData.status?.toLowerCase() === "pending" && (
+                <div className={styles.modalActions}>
+                  <button
+                    className={styles.leaveApprove}
+                    onClick={() => {
+                      handleApprove(modalData.id, modalData.employeeName);
+                      setModalData(null);
+                    }}
+                  >
+                    ✓ Approve This Request
+                  </button>
+                  <button
+                    className={styles.leaveReject}
+                    onClick={() => {
+                      handleReject(modalData.id, modalData.employeeName);
+                      setModalData(null);
+                    }}
+                  >
+                    ✗ Reject This Request
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

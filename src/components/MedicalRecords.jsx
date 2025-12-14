@@ -1,17 +1,14 @@
 import React, { useState, useEffect } from "react";
 import styles from "./MedicalRecords.module.css";
-import {
-  getMedicalRecordsWithPersonnel,
-  downloadMedicalRecord,
-  migratePersonnelDocumentsToMedicalRecords,
-  addMedicalRecord,
-} from "./db";
 import Sidebar from "./Sidebar.jsx";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
+import { supabase } from "../lib/supabaseClient";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-const MDRMedicalRecords = () => {
+const MedicalRecords = () => {
   const [medicalRecords, setMedicalRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const { isSidebarCollapsed } = useSidebar();
@@ -22,132 +19,89 @@ const MDRMedicalRecords = () => {
   const [search, setSearch] = useState("");
   const [filterRecordType, setFilterRecordType] = useState("");
   const [currentFilterCard, setCurrentFilterCard] = useState("total");
-  const [showUploadForm, setShowUploadForm] = useState(false);
-  const [uploadForm, setUploadForm] = useState({
-    personnelId: "",
-    recordType: "Checkup",
-    documentName: "",
-    description: "",
-    file: null,
-  });
 
-  // Extract the transformation logic to a separate function
- const transformRecords = (recordsWithPersonnel) => {
-   // Use a more specific unique key that includes record type and other identifiers
-   const uniqueRecords = new Map();
-
-   recordsWithPersonnel.forEach((record) => {
-     // Create a more comprehensive unique key
-     const uniqueKey = `${record.personnelId}-${record.documentName}-${record.recordType}-${record.id}`;
-
-     if (!uniqueRecords.has(uniqueKey)) {
-       uniqueRecords.set(uniqueKey, record);
-     } else {
-       console.log("Duplicate record skipped:", uniqueKey);
-     }
-   });
-
-   console.log("After deduplication:", uniqueRecords.size, "records");
-
-   return Array.from(uniqueRecords.values()).map((record) => {
-     let recordType = record.recordType || "General";
-
-     if (!record.recordType || record.recordType === "General") {
-       const docName = record.documentName?.toLowerCase() || "";
-       const recordTypeLower = record.recordType?.toLowerCase() || "";
-
-       if (docName.includes("dental") || recordTypeLower.includes("dental")) {
-         recordType = "Dental";
-       } else if (
-         docName.includes("checkup") ||
-         docName.includes("medical") ||
-         recordTypeLower.includes("checkup")
-       ) {
-         recordType = "Checkup";
-       } else if (
-         docName.includes("lab") ||
-         docName.includes("test") ||
-         recordTypeLower.includes("lab")
-       ) {
-         recordType = "Lab Test";
-       } else if (
-         docName.includes("imaging") ||
-         docName.includes("x-ray") ||
-         docName.includes("mri") ||
-         docName.includes("scan") ||
-         recordTypeLower.includes("imaging")
-       ) {
-         recordType = "Imaging";
-       }
-     }
-
-     return {
-       id: record.id,
-       name: `${record.personnel.first_name || ""} ${
-         record.personnel.last_name || ""
-       }`.trim(),
-       rank: record.personnel.rank || "",
-       designation: record.personnel.designation || "",
-       recordName: record.documentName,
-       recordType: recordType,
-       dateUploaded: record.uploadDate
-         ? new Date(record.uploadDate).toLocaleDateString()
-         : new Date().toLocaleDateString(),
-       downloadUrl: record.downloadUrl || "#",
-       fileName: record.fileName,
-       personnelId: record.personnelId,
-       rawRecord: record,
-     };
-   });
- };
-
+  // Load medical records from Supabase
   useEffect(() => {
-    const fetchMedicalRecords = async () => {
-      try {
-        console.log("=== STARTING MEDICAL RECORDS FETCH ===");
-
-        // First, migrate any existing personnel documents to medical records
-        await migratePersonnelDocumentsToMedicalRecords();
-
-        // Then fetch all medical records with personnel data
-        const recordsWithPersonnel = await getMedicalRecordsWithPersonnel();
-
-        // DETAILED DEBUGGING
-        console.log("=== DATABASE ANALYSIS ===");
-        console.log("Total records from DB:", recordsWithPersonnel.length);
-
-        // Count by type
-        const typeCount = {};
-        recordsWithPersonnel.forEach((record) => {
-          const type = record.recordType || "Unknown";
-          typeCount[type] = (typeCount[type] || 0) + 1;
-        });
-        console.log("Record type counts:", typeCount);
-
-        // Use the transformRecords function
-        const transformedRecords = transformRecords(recordsWithPersonnel);
-
-        console.log("=== FINAL TRANSFORMED RECORDS ===");
-        console.log("Transformed records:", transformedRecords);
-
-        const finalTypeCount = {};
-        transformedRecords.forEach((record) => {
-          const type = record.recordType;
-          finalTypeCount[type] = (finalTypeCount[type] || 0) + 1;
-        });
-        console.log("Final type counts:", finalTypeCount);
-
-        setMedicalRecords(transformedRecords);
-        setLoading(false);
-      } catch (error) {
-        console.error("Error loading medical records from IndexedDB:", error);
-        setLoading(false);
-      }
-    };
-
-    fetchMedicalRecords();
+    loadMedicalRecords();
   }, []);
 
+  const loadMedicalRecords = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch only medical records (category = 'Medical Record')
+      const { data, error } = await supabase
+        .from("personnel_documents")
+        .select(`
+          *,
+          personnel (
+            first_name,
+            middle_name,
+            last_name,
+            rank,
+            designation
+          )
+        `)
+        .eq('category', 'Medical Record') // Only get medical records
+        .order("uploaded_at", { ascending: false });
+
+      if (error) throw error;
+
+      // Transform the data
+      const transformedRecords = (data || []).map(record => {
+        const personnel = record.personnel || {};
+        
+        // Use record_type from database, fallback to determining from name
+        let recordType = record.record_type || "General";
+        
+        // If record type is General, try to determine from document name
+        if (recordType === "General") {
+          const docName = record.name?.toLowerCase() || "";
+          if (docName.includes("dental")) {
+            recordType = "Dental";
+          } else if (docName.includes("checkup") || docName.includes("medical")) {
+            recordType = "Checkup";
+          } else if (docName.includes("lab") || docName.includes("test")) {
+            recordType = "Lab Test";
+          } else if (docName.includes("imaging") || docName.includes("x-ray") || 
+                     docName.includes("mri") || docName.includes("scan")) {
+            recordType = "Imaging";
+          }
+        }
+
+        return {
+          id: record.id,
+          name: `${personnel.first_name || ""} ${personnel.middle_name || ""} ${personnel.last_name || ""}`.replace(/\s+/g, ' ').trim(),
+          rank: personnel.rank || "",
+          designation: personnel.designation || "",
+          recordName: record.name,
+          recordType: recordType,
+          dateUploaded: record.uploaded_at ? 
+            new Date(record.uploaded_at).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric"
+            }) : 
+            new Date().toLocaleDateString(),
+          downloadUrl: record.file_url,
+          fileName: record.name,
+          personnelId: record.personnel_id,
+          filePath: record.file_path,
+          fileSize: record.file_size,
+          description: record.description,
+          uploadDate: record.uploaded_at
+        };
+      });
+
+      console.log("Loaded medical records:", transformedRecords.length);
+      setMedicalRecords(transformedRecords);
+    } catch (error) {
+      console.error("Error loading medical records:", error);
+      toast.error("Failed to load medical records");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filtering & pagination logic
   function applyFilters(items) {
@@ -246,21 +200,18 @@ const MDRMedicalRecords = () => {
       );
     }
 
-    // Show pages around current page (max 5 pages total including first and last)
+    // Show pages around current page
     let startPage = Math.max(2, currentPage - 1);
     let endPage = Math.min(pageCount - 1, currentPage + 1);
 
-    // Adjust if we're near the beginning
     if (currentPage <= 3) {
       endPage = Math.min(pageCount - 1, 4);
     }
 
-    // Adjust if we're near the end
     if (currentPage >= pageCount - 2) {
       startPage = Math.max(2, pageCount - 3);
     }
 
-    // Generate middle page buttons
     for (let i = startPage; i <= endPage; i++) {
       if (i > 1 && i < pageCount) {
         buttons.push(
@@ -278,7 +229,6 @@ const MDRMedicalRecords = () => {
       }
     }
 
-    // Show ellipsis before last page if needed
     if (currentPage < pageCount - 2) {
       buttons.push(
         <span key="ellipsis2" className={styles.MDRPaginationEllipsis}>
@@ -287,7 +237,6 @@ const MDRMedicalRecords = () => {
       );
     }
 
-    // Always show last page if there is more than 1 page
     if (pageCount > 1) {
       buttons.push(
         <button
@@ -320,6 +269,30 @@ const MDRMedicalRecords = () => {
     return buttons;
   };
 
+  // Handle download
+  const handleDownload = async (record) => {
+    try {
+      console.log("Downloading medical record:", record.id, record.fileName);
+
+      if (record.downloadUrl) {
+        // Create a temporary link and trigger download
+        const link = document.createElement("a");
+        link.href = record.downloadUrl;
+        link.download = record.fileName || "medical_record";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        toast.success("Download started");
+      } else {
+        toast.error("No download URL available");
+      }
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      toast.error("Error downloading file");
+    }
+  };
+
   // Summary numbers
   const totalItems = medicalRecords.length;
   const checkupItems = medicalRecords.filter(
@@ -344,32 +317,12 @@ const MDRMedicalRecords = () => {
     setCurrentPage(1);
   }
 
-  const handleDownload = async (record) => {
-    try {
-      console.log("Downloading medical record:", record.id, record.fileName);
-
-      if (record.rawRecord && record.rawRecord.downloadUrl) {
-        // Use the blob URL if available
-        const link = document.createElement("a");
-        link.href = record.rawRecord.downloadUrl;
-        link.download = record.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        // Fallback to the download function
-        await downloadMedicalRecord(record.id);
-      }
-    } catch (error) {
-      console.error("Error downloading file:", error);
-      alert("Error downloading file. Please try again.");
-    }
-  };
-
   if (loading) {
     return (
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <p>Loading medical records...</p>
+        <div className={styles.loadingContainer}>
+          <p>Loading medical records...</p>
+        </div>
       </div>
     );
   }
@@ -381,8 +334,22 @@ const MDRMedicalRecords = () => {
 
       <Hamburger />
       <Sidebar />
+      
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+      
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <h1 className={styles.MDRTitle}>Medical Records of Employees</h1>
+        <h1 className={styles.MDRTitle}>Medical Records of Personnel</h1>
 
         {/* Top Controls */}
         <div className={styles.MDRTopControls}>
@@ -396,11 +363,11 @@ const MDRMedicalRecords = () => {
               }}
             >
               <option value="">All Record Types</option>
-              <option>Checkup</option>
-              <option>Lab Test</option>
-              <option>Imaging</option>
-              <option>Dental</option>
-              <option>General</option>
+              <option value="Checkup">Checkup</option>
+              <option value="Lab Test">Lab Test</option>
+              <option value="Imaging">Imaging</option>
+              <option value="Dental">Dental</option>
+              <option value="General">General</option>
             </select>
 
             <input
@@ -413,13 +380,8 @@ const MDRMedicalRecords = () => {
                 setCurrentPage(1);
               }}
             />
-
-            {/* ADD UPLOAD BUTTON */}
-          
           </div>
         </div>
-
-   
 
         {/* Summary Cards */}
         <div className={styles.MDRSummary}>
@@ -485,13 +447,14 @@ const MDRMedicalRecords = () => {
                 <th>Record Name</th>
                 <th>Record Type</th>
                 <th>Date Uploaded</th>
+                <th>File Size</th>
                 <th>Download</th>
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className={styles.MDRNoRequestsTable}>
+                  <td colSpan="8" className={styles.MDRNoRequestsTable}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>
                       🏥
                     </div>
@@ -509,9 +472,7 @@ const MDRMedicalRecords = () => {
                     <td>
                       <span
                         className={`${styles.MDRStatus} ${
-                          styles[
-                            record.recordType.toLowerCase().replace(" ", "")
-                          ]
+                          styles[record.recordType.toLowerCase().replace(" ", "")]
                         }`}
                       >
                         {record.recordType}
@@ -519,14 +480,16 @@ const MDRMedicalRecords = () => {
                     </td>
                     <td>{record.dateUploaded}</td>
                     <td>
+                      {record.fileSize ? 
+                        `${Math.round(record.fileSize / 1024)} KB` : 
+                        "N/A"
+                      }
+                    </td>
+                    <td>
                       <button
                         className={styles.MDRDownloadLink}
                         onClick={() => handleDownload(record)}
-                        style={{
-                          border: "none",
-                          cursor: "pointer",
-                          fontSize: "inherit",
-                        }}
+                        disabled={!record.downloadUrl}
                       >
                         📥 Download
                       </button>
@@ -542,4 +505,4 @@ const MDRMedicalRecords = () => {
   );
 };
 
-export default MDRMedicalRecords;
+export default MedicalRecords;

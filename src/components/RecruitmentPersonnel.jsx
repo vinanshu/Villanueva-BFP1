@@ -7,6 +7,7 @@ import { useSidebar } from "./SidebarContext.jsx";
 import { Title, Meta } from "react-head";
 import Flatpickr from "react-flatpickr";
 import "flatpickr/dist/flatpickr.css";
+import { supabase } from "../lib/supabaseClient";
 
 const RecruitmentPersonnel = () => {
   const [formData, setFormData] = useState({
@@ -16,8 +17,14 @@ const RecruitmentPersonnel = () => {
     stage: "",
     interviewDate: "",
     status: "",
+    photoUrl: "",
+    resumeUrl: "",
   });
 
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  
   const [records, setRecords] = useState([]);
   const [editId, setEditId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
@@ -33,67 +40,100 @@ const RecruitmentPersonnel = () => {
   const [filterStage, setFilterStage] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [currentFilterCard, setCurrentFilterCard] = useState("total");
+  
+  // Loading state
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  
+  // File upload states
+  const [photoFile, setPhotoFile] = useState(null);
+  const [resumeFile, setResumeFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [resumeFileName, setResumeFileName] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Load initial data
+  // Load data from Supabase
   useEffect(() => {
-    const mockData = [
-      {
-        id: 1,
-        candidate: "John Doe",
-        position: "Firefighter",
-        applicationDate: "2024-01-15",
-        stage: "Applied",
-        interviewDate: "2024-01-25",
-        status: "Pending",
-      },
-      {
-        id: 2,
-        candidate: "Jane Smith",
-        position: "Fire Inspector",
-        applicationDate: "2024-01-10",
-        stage: "Interview",
-        interviewDate: "2024-01-20",
-        status: "Approved",
-      },
-      {
-        id: 3,
-        candidate: "Mike Johnson",
-        position: "Firefighter",
-        applicationDate: "2024-01-18",
-        stage: "Screening",
-        interviewDate: "2024-01-28",
-        status: "Pending",
-      },
-      {
-        id: 4,
-        candidate: "Sarah Wilson",
-        position: "Fire Inspector",
-        applicationDate: "2024-01-12",
-        stage: "Final Review",
-        interviewDate: "2024-01-22",
-        status: "Approved",
-      },
-      {
-        id: 5,
-        candidate: "David Brown",
-        position: "Firefighter",
-        applicationDate: "2024-01-20",
-        stage: "Applied",
-        interviewDate: "2024-01-30",
-        status: "Rejected",
-      },
-      {
-        id: 6,
-        candidate: "Lisa Taylor",
-        position: "Fire Inspector",
-        applicationDate: "2024-01-08",
-        stage: "Interview",
-        interviewDate: "2024-01-18",
-        status: "Pending",
-      },
-    ];
-    setRecords(mockData);
+    fetchRecruitmentData();
   }, []);
+
+  // Generate username from candidate name
+  const generateUsername = (candidateName) => {
+    if (!candidateName) return "";
+    
+    // Remove special characters and spaces, convert to lowercase
+    const baseUsername = candidateName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 15); // Limit length
+    
+    // Add random numbers for uniqueness
+    const randomNumbers = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    
+    return `${baseUsername}${randomNumbers}`;
+  };
+
+  // Generate random password
+  const generatePassword = () => {
+    const length = 10;
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+    let password = "";
+    
+    // Ensure at least one of each type
+    password += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[Math.floor(Math.random() * 26)];
+    password += "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)];
+    password += "0123456789"[Math.floor(Math.random() * 10)];
+    password += "!@#$%^&*"[Math.floor(Math.random() * 8)];
+    
+    // Fill the rest
+    for (let i = 4; i < length; i++) {
+      password += charset[Math.floor(Math.random() * charset.length)];
+    }
+    
+    // Shuffle the password
+    return password.split('').sort(() => Math.random() - 0.5).join('');
+  };
+
+  // Auto-generate username when candidate name changes
+  useEffect(() => {
+    if (formData.candidate && editId === null) {
+      const generatedUsername = generateUsername(formData.candidate);
+      setUsername(generatedUsername);
+      
+      // Also generate password if not already set
+      if (!password) {
+        const generatedPassword = generatePassword();
+        setPassword(generatedPassword);
+      }
+    }
+  }, [formData.candidate]);
+
+  // Generate new password
+  const handleGeneratePassword = () => {
+    const newPassword = generatePassword();
+    setPassword(newPassword);
+  };
+
+  const fetchRecruitmentData = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('recruitment_personnel')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching recruitment data:', error);
+        return;
+      }
+
+      setRecords(data || []);
+    } catch (error) {
+      console.error('Error in fetchRecruitmentData:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { id, value } = e.target;
@@ -103,24 +143,213 @@ const RecruitmentPersonnel = () => {
     }));
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    if (editId !== null) {
-      setRecords((prev) =>
-        prev.map((record) =>
-          record.id === editId ? { ...formData, id: editId } : record
-        )
-      );
-      setEditId(null);
-    } else {
-      const newRecord = {
-        ...formData,
-        id: Date.now(),
+  // Handle photo file selection
+  const handlePhotoChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file (JPEG, PNG, etc.)');
+        return;
+      }
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image file size should be less than 5MB');
+        return;
+      }
+      
+      setPhotoFile(file);
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result);
       };
-      setRecords((prev) => [...prev, newRecord]);
+      reader.readAsDataURL(file);
     }
+  };
 
+  // Handle resume file selection
+  const handleResumeChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      const allowedTypes = [
+        'application/pdf', 
+        'application/msword', 
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
+      
+      // Check both MIME type and file extension
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+      const isValidType = allowedTypes.includes(file.type) || 
+                         ['pdf', 'doc', 'docx'].includes(fileExtension);
+      
+      if (!isValidType) {
+        alert('Please select a PDF or Word document (PDF, DOC, DOCX)');
+        return;
+      }
+      
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Resume file size should be less than 10MB');
+        return;
+      }
+      
+      setResumeFile(file);
+      setResumeFileName(file.name);
+    }
+  };
+
+  // Upload file to Supabase Storage
+  const uploadFile = async (file, bucket, fileName) => {
+    try {
+      // Create unique filename
+      const fileExt = fileName.split('.').pop();
+      const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      const filePath = `${bucket}/${uniqueFileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('recruitment-files')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error('Error uploading file:', error);
+        throw error;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('recruitment-files')
+        .getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Error in uploadFile:', error);
+      throw error;
+    }
+  };
+
+  // Delete file from Supabase Storage
+  const deleteFile = async (url) => {
+    if (!url) return;
+    
+    try {
+      // Extract the file path from the URL
+      const urlParts = url.split('/');
+      const filePath = urlParts.slice(urlParts.indexOf('recruitment-files') + 1).join('/');
+      
+      const { error } = await supabase.storage
+        .from('recruitment-files')
+        .remove([filePath]);
+
+      if (error) {
+        console.error('Error deleting file:', error);
+      }
+    } catch (error) {
+      console.error('Error in deleteFile:', error);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (editId !== null) {
+      await handleUpdateCandidate(e);
+      return;
+    }
+    
+    await addNewCandidate();
+  };
+
+  const addNewCandidate = async () => {
+    try {
+      setSubmitting(true);
+      setUploadProgress(0);
+
+      // Validate required fields
+      if (!username || !password) {
+        alert('Please ensure username and password are generated');
+        setSubmitting(false);
+        return;
+      }
+
+      let photoUrl = "";
+      let resumeUrl = "";
+
+      // Upload photo if selected
+      if (photoFile) {
+        setUploadProgress(30);
+        photoUrl = await uploadFile(photoFile, 'photos', photoFile.name);
+      }
+
+      // Upload resume if selected
+      if (resumeFile) {
+        setUploadProgress(60);
+        resumeUrl = await uploadFile(resumeFile, 'resumes', resumeFile.name);
+      }
+
+      setUploadProgress(90);
+
+      const newCandidate = {
+        candidate: formData.candidate,
+        position: formData.position,
+        username: username,
+        password: password,
+        application_date: formData.applicationDate,
+        stage: formData.stage,
+        interview_date: formData.interviewDate,
+        status: formData.status,
+        photo_url: photoUrl,
+        resume_url: resumeUrl,
+      };
+
+      const { data, error } = await supabase
+        .from('recruitment_personnel')
+        .insert([newCandidate])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding candidate:', error);
+        
+        if (error.code === '23505') {
+          alert('Username already exists. Please try again.');
+        } else {
+          alert('Failed to add candidate. Please try again.');
+        }
+        return;
+      }
+
+      setUploadProgress(100);
+
+      // Refresh the data
+      await fetchRecruitmentData();
+      
+      // Reset form and file states
+      resetForm();
+      setShowForm(false);
+      setCurrentPage(1);
+      
+      setTimeout(() => {
+        setUploadProgress(0);
+        alert('Candidate added successfully!\n\nCredentials:\nUsername: ' + username + '\nPassword: ' + password);
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error in addNewCandidate:', error);
+      alert('An error occurred. Please try again.');
+      setUploadProgress(0);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resetForm = () => {
     setFormData({
       candidate: "",
       position: "",
@@ -128,10 +357,16 @@ const RecruitmentPersonnel = () => {
       stage: "",
       interviewDate: "",
       status: "",
+      photoUrl: "",
+      resumeUrl: "",
     });
-
-    setShowForm(false);
-    setCurrentPage(1);
+    setUsername("");
+    setPassword("");
+    setShowPassword(false);
+    setPhotoFile(null);
+    setResumeFile(null);
+    setPhotoPreview("");
+    setResumeFileName("");
   };
 
   const handleEdit = (id) => {
@@ -140,34 +375,109 @@ const RecruitmentPersonnel = () => {
       setFormData({
         candidate: record.candidate,
         position: record.position,
-        applicationDate: record.applicationDate,
+        applicationDate: record.application_date || "",
         stage: record.stage,
-        interviewDate: record.interviewDate,
+        interviewDate: record.interview_date || "",
         status: record.status,
+        photoUrl: record.photo_url || "",
+        resumeUrl: record.resume_url || "",
       });
+      setUsername(record.username || "");
+      setPassword(record.password || "");
+      setPhotoPreview(record.photo_url || "");
+      setResumeFileName(record.resume_url ? record.resume_url.split('/').pop() : "");
       setEditId(id);
       setShowEditModal(true);
     }
   };
 
-  const handleUpdate = (e) => {
+  const handleUpdateCandidate = async (e) => {
     e.preventDefault();
-    if (editId !== null) {
-      setRecords((prev) =>
-        prev.map((record) =>
-          record.id === editId ? { ...formData, id: editId } : record
-        )
-      );
+    
+    if (editId === null) return;
+
+    try {
+      setSubmitting(true);
+      setUploadProgress(0);
+
+      let photoUrl = formData.photoUrl;
+      let resumeUrl = formData.resumeUrl;
+      let oldPhotoUrl = formData.photoUrl;
+      let oldResumeUrl = formData.resumeUrl;
+
+      // Upload new photo if selected
+      if (photoFile) {
+        setUploadProgress(30);
+        photoUrl = await uploadFile(photoFile, 'photos', photoFile.name);
+        // Delete old photo if it exists
+        if (oldPhotoUrl) {
+          await deleteFile(oldPhotoUrl);
+        }
+      }
+
+      // Upload new resume if selected
+      if (resumeFile) {
+        setUploadProgress(60);
+        resumeUrl = await uploadFile(resumeFile, 'resumes', resumeFile.name);
+        // Delete old resume if it exists
+        if (oldResumeUrl) {
+          await deleteFile(oldResumeUrl);
+        }
+      }
+
+      setUploadProgress(90);
+
+      const updatedData = {
+        candidate: formData.candidate,
+        position: formData.position,
+        username: username,
+        password: password,
+        application_date: formData.applicationDate,
+        stage: formData.stage,
+        interview_date: formData.interviewDate,
+        status: formData.status,
+        photo_url: photoUrl,
+        resume_url: resumeUrl,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('recruitment_personnel')
+        .update(updatedData)
+        .eq('id', editId);
+
+      if (error) {
+        console.error('Error updating candidate:', error);
+        
+        if (error.code === '23505') {
+          alert('Username already exists. Please change the username.');
+        } else {
+          alert('Failed to update candidate. Please try again.');
+        }
+        return;
+      }
+
+      setUploadProgress(100);
+
+      // Refresh the data
+      await fetchRecruitmentData();
+      
+      // Reset states
       setShowEditModal(false);
       setEditId(null);
-      setFormData({
-        candidate: "",
-        position: "",
-        applicationDate: "",
-        stage: "",
-        interviewDate: "",
-        status: "",
-      });
+      resetForm();
+      
+      setTimeout(() => {
+        setUploadProgress(0);
+        alert('Candidate updated successfully!');
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error in handleUpdateCandidate:', error);
+      alert('An error occurred. Please try again.');
+      setUploadProgress(0);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -176,18 +486,70 @@ const RecruitmentPersonnel = () => {
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    if (deleteId !== null) {
-      setRecords((prev) => prev.filter((record) => record.id !== deleteId));
+  const confirmDelete = async () => {
+    if (deleteId === null) return;
+
+    try {
+      // Get the record first to delete associated files
+      const record = records.find((item) => item.id === deleteId);
+      
+      // Delete associated files from storage if they exist
+      if (record?.photo_url) {
+        await deleteFile(record.photo_url);
+      }
+
+      if (record?.resume_url) {
+        await deleteFile(record.resume_url);
+      }
+
+      // Delete from database
+      const { error } = await supabase
+        .from('recruitment_personnel')
+        .delete()
+        .eq('id', deleteId);
+
+      if (error) {
+        console.error('Error deleting candidate:', error);
+        alert('Failed to delete candidate. Please try again.');
+        return;
+      }
+
+      // Refresh the data
+      await fetchRecruitmentData();
+      
       setShowDeleteModal(false);
       setDeleteId(null);
       setCurrentPage(1);
+      
+      alert('Candidate deleted successfully!');
+      
+    } catch (error) {
+      console.error('Error in confirmDelete:', error);
+      alert('An error occurred. Please try again.');
     }
   };
 
   const cancelDelete = () => {
     setShowDeleteModal(false);
     setDeleteId(null);
+  };
+
+  // Function to view/download resume
+  const viewResume = (url) => {
+    if (url) {
+      window.open(url, '_blank');
+    } else {
+      alert('No resume available for this candidate.');
+    }
+  };
+
+  // Function to view/download photo
+  const viewPhoto = (url) => {
+    if (url) {
+      window.open(url, '_blank');
+    } else {
+      alert('No photo available for this candidate.');
+    }
   };
 
   const getOptionColor = (selectId, value) => {
@@ -222,20 +584,47 @@ const RecruitmentPersonnel = () => {
     }
   };
 
+  // Get file name from URL
+  const getFileNameFromUrl = (url) => {
+    if (!url) return "";
+    const parts = url.split('/');
+    return parts[parts.length - 1];
+  };
+
+  // Password cell component for table
+  const PasswordCell = ({ password }) => {
+    const [showPass, setShowPass] = useState(false);
+    
+    return (
+      <td className={styles.passwordCell}>
+        <span className={styles.passwordMask}>
+          {showPass ? password : "••••••"}
+        </span>
+        <button
+          type="button"
+          className={styles.togglePassword}
+          onClick={() => setShowPass(!showPass)}
+        >
+          {showPass ? "🙈" : "👁"}
+        </button>
+      </td>
+    );
+  };
+
   // Filtering & pagination logic
   function applyFilters(items) {
     let filtered = [...items];
 
     // Card filter
     if (currentFilterCard === "applied") {
-      filtered = filtered.filter((i) => i.stage.toLowerCase() === "applied");
+      filtered = filtered.filter((i) => i.stage?.toLowerCase() === "applied");
     } else if (currentFilterCard === "screening") {
-      filtered = filtered.filter((i) => i.stage.toLowerCase() === "screening");
+      filtered = filtered.filter((i) => i.stage?.toLowerCase() === "screening");
     } else if (currentFilterCard === "interview") {
-      filtered = filtered.filter((i) => i.stage.toLowerCase() === "interview");
+      filtered = filtered.filter((i) => i.stage?.toLowerCase() === "interview");
     } else if (currentFilterCard === "final") {
       filtered = filtered.filter(
-        (i) => i.stage.toLowerCase() === "final review"
+        (i) => i.stage?.toLowerCase() === "final review"
       );
     }
 
@@ -246,7 +635,7 @@ const RecruitmentPersonnel = () => {
 
     filtered = filtered.filter((i) => {
       const text =
-        `${i.candidate} ${i.position} ${i.applicationDate} ${i.stage} ${i.interviewDate} ${i.status}`.toLowerCase();
+        `${i.candidate} ${i.position} ${i.username} ${i.application_date} ${i.stage} ${i.interview_date} ${i.status}`.toLowerCase();
       const stageMatch =
         !stageFilter || (i.stage || "").toLowerCase().includes(stageFilter);
       const statusMatch =
@@ -269,7 +658,31 @@ const RecruitmentPersonnel = () => {
     pageStart + rowsPerPage
   );
 
-  // Pagination function (replicated from personnel register)
+  // Summary numbers for cards
+  const totalItems = records.length;
+  const appliedItems = records.filter(
+    (i) => i.stage?.toLowerCase() === "applied"
+  ).length;
+  const screeningItems = records.filter(
+    (i) => i.stage?.toLowerCase() === "screening"
+  ).length;
+  const interviewItems = records.filter(
+    (i) => i.stage?.toLowerCase() === "interview"
+  ).length;
+  const finalReviewItems = records.filter(
+    (i) => i.stage?.toLowerCase() === "final review"
+  ).length;
+
+  function handleCardClick(filter) {
+    if (currentFilterCard === filter) {
+      setCurrentFilterCard("total");
+    } else {
+      setCurrentFilterCard(filter);
+    }
+    setCurrentPage(1);
+  }
+
+  // Pagination function
   const renderPaginationButtons = () => {
     const pageCount = Math.max(
       1,
@@ -366,7 +779,7 @@ const RecruitmentPersonnel = () => {
           onClick={() => setCurrentPage(pageCount)}
           disabled={hasNoData}
         >
-          {pageCount}
+        {pageCount}
         </button>
       );
     }
@@ -391,30 +804,6 @@ const RecruitmentPersonnel = () => {
       </div>
     );
   };
-
-  // Summary numbers for cards
-  const totalItems = records.length;
-  const appliedItems = records.filter(
-    (i) => i.stage.toLowerCase() === "applied"
-  ).length;
-  const screeningItems = records.filter(
-    (i) => i.stage.toLowerCase() === "screening"
-  ).length;
-  const interviewItems = records.filter(
-    (i) => i.stage.toLowerCase() === "interview"
-  ).length;
-  const finalReviewItems = records.filter(
-    (i) => i.stage.toLowerCase() === "final review"
-  ).length;
-
-  function handleCardClick(filter) {
-    if (currentFilterCard === filter) {
-      setCurrentFilterCard("total");
-    } else {
-      setCurrentFilterCard(filter);
-    }
-    setCurrentPage(1);
-  }
 
   return (
     <div className={styles.container}>
@@ -520,18 +909,31 @@ const RecruitmentPersonnel = () => {
           </button>
         </div>
 
-        {/* Form Card - Replicated from Personnel Register */}
+        {/* Form Card */}
         <div className={styles.card}>
-          <h2>Register New Candidate</h2>
+          <h2>Add New Candidate</h2>
           <button
             className={`${styles.showFormBtn} ${styles.submit}${
               showForm ? styles.showing : ""
             }`}
             onClick={() => setShowForm(!showForm)}
             type="button"
+            disabled={submitting}
           >
             {showForm ? "Hide Form" : "Add New Candidate"}
           </button>
+
+          {/* Upload Progress Bar */}
+          {uploadProgress > 0 && uploadProgress < 100 && (
+            <div className={styles.progressBarContainer}>
+              <div 
+                className={styles.progressBar} 
+                style={{ width: `${uploadProgress}%` }}
+              >
+                Uploading... {uploadProgress}%
+              </div>
+            </div>
+          )}
 
           <form
             className={`${styles.form} ${styles.layout} ${
@@ -539,27 +941,106 @@ const RecruitmentPersonnel = () => {
             }`}
             onSubmit={handleSubmit}
           >
-            {/* Left: Empty Photo Section (for layout consistency) */}
+            {/* Left: Photo Section */}
             <div className={styles.photoSection}>
               <div className={styles.photoPreview}>
-                <span>No Photo</span>
+                {photoPreview ? (
+                  <img 
+                    src={photoPreview} 
+                    alt="Candidate preview" 
+                    className={styles.photoImage}
+                  />
+                ) : (
+                  <span>No Photo</span>
+                )}
               </div>
               <div className={styles.fileUpload}>
                 <label htmlFor="photo" className={styles.fileUploadLabel}>
-                  📂 Upload Photo
+                  📂 Upload Photo (Max 5MB)
                 </label>
                 <input
                   type="file"
                   id="photo"
                   accept="image/*"
-                  style={{ display: "none" }}
+                  onChange={handlePhotoChange}
+                  disabled={submitting}
                 />
-                <span>No Photo selected</span>
+                <span>{photoFile ? photoFile.name : "No photo selected"}</span>
+              </div>
+              
+              {/* Resume Upload */}
+              <div className={styles.fileUpload} style={{ marginTop: '20px' }}>
+                <label htmlFor="resume" className={styles.fileUploadLabel}>
+                  📄 Upload Resume (PDF/DOC, Max 10MB)
+                </label>
+                <input
+                  type="file"
+                  id="resume"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleResumeChange}
+                  disabled={submitting}
+                />
+                <span>{resumeFileName || "No resume selected"}</span>
               </div>
             </div>
 
             {/* Right: Info fields */}
             <div className={styles.infoSection}>
+              {/* Username and Password Fields */}
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <div className={styles.floatingGroup}>
+                    <input
+                      type="text"
+                      id="username"
+                      className={styles.floatingInput}
+                      placeholder=" "
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                      disabled={submitting}
+                    />
+                    <label htmlFor="username" className={styles.floatingLabel}>
+                      Username *
+                    </label>
+                  </div>
+                </div>
+                <div className={styles.formGroup}>
+                  <div className={styles.floatingGroup}>
+                    <div className={styles.passwordInputGroup}>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        id="password"
+                        className={styles.floatingInput}
+                        placeholder=" "
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        disabled={submitting}
+                      />
+                      <button
+                        type="button"
+                        className={styles.showPasswordBtn}
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? "🙈" : "👁"}
+                      </button>
+                    </div>
+                    <label htmlFor="password" className={styles.floatingLabel}>
+                      Password *
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.generatePasswordBtn}
+                    onClick={handleGeneratePassword}
+                    disabled={submitting}
+                  >
+                    Generate
+                  </button>
+                </div>
+              </div>
+
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <div className={styles.floatingGroup}>
@@ -571,6 +1052,7 @@ const RecruitmentPersonnel = () => {
                       value={formData.candidate}
                       onChange={handleInputChange}
                       required
+                      disabled={submitting}
                     />
                     <label htmlFor="candidate" className={styles.floatingLabel}>
                       Candidate Name
@@ -587,6 +1069,7 @@ const RecruitmentPersonnel = () => {
                       value={formData.position}
                       onChange={handleInputChange}
                       required
+                      disabled={submitting}
                     />
                     <label htmlFor="position" className={styles.floatingLabel}>
                       Position
@@ -603,7 +1086,7 @@ const RecruitmentPersonnel = () => {
                       onChange={([date]) =>
                         setFormData((prev) => ({
                           ...prev,
-                          applicationDate: date,
+                          applicationDate: date ? date.toISOString().split('T')[0] : "",
                         }))
                       }
                       options={{
@@ -612,6 +1095,7 @@ const RecruitmentPersonnel = () => {
                       }}
                       className={styles.floatingInput}
                       placeholder=" "
+                      disabled={submitting}
                     />
                     <label
                       htmlFor="applicationDate"
@@ -629,6 +1113,7 @@ const RecruitmentPersonnel = () => {
                       value={formData.stage}
                       onChange={handleInputChange}
                       required
+                      disabled={submitting}
                       style={{
                         backgroundColor:
                           getOptionColor("stage", formData.stage) || "#fff",
@@ -637,16 +1122,14 @@ const RecruitmentPersonnel = () => {
                           : "#000",
                       }}
                     >
-                      <option value="" disabled>
-                       
-                      </option>
+                      <option value="" disabled></option>
                       <option value="Applied">Applied</option>
                       <option value="Screening">Screening</option>
                       <option value="Interview">Interview</option>
                       <option value="Final Review">Final Review</option>
                     </select>
                     <label htmlFor="stage" className={styles.floatingLabel}>
-                     Select Stage
+                      Select Stage
                     </label>
                   </div>
                 </div>
@@ -660,7 +1143,7 @@ const RecruitmentPersonnel = () => {
                       onChange={([date]) =>
                         setFormData((prev) => ({
                           ...prev,
-                          interviewDate: date,
+                          interviewDate: date ? date.toISOString().split('T')[0] : "",
                         }))
                       }
                       options={{
@@ -668,6 +1151,7 @@ const RecruitmentPersonnel = () => {
                       }}
                       className={styles.floatingInput}
                       placeholder=" "
+                      disabled={submitting}
                     />
                     <label
                       htmlFor="interviewDate"
@@ -685,6 +1169,7 @@ const RecruitmentPersonnel = () => {
                       value={formData.status}
                       onChange={handleInputChange}
                       required
+                      disabled={submitting}
                       style={{
                         backgroundColor:
                           getOptionColor("status", formData.status) || "#fff",
@@ -693,15 +1178,13 @@ const RecruitmentPersonnel = () => {
                           : "#000",
                       }}
                     >
-                      <option value="" disabled>
-                  
-                      </option>
+                      <option value="" disabled></option>
                       <option value="Pending">Pending</option>
                       <option value="Approved">Approved</option>
                       <option value="Rejected">Rejected</option>
                     </select>
                     <label htmlFor="status" className={styles.floatingLabel}>
-                       Select Status
+                      Select Status
                     </label>
                   </div>
                 </div>
@@ -712,28 +1195,27 @@ const RecruitmentPersonnel = () => {
                   type="button"
                   className={styles.cancel}
                   onClick={() => {
-                    setFormData({
-                      candidate: "",
-                      position: "",
-                      applicationDate: "",
-                      stage: "",
-                      interviewDate: "",
-                      status: "",
-                    });
+                    resetForm();
                     setShowForm(false);
                   }}
+                  disabled={submitting}
                 >
                   Clear Information
                 </button>
-                <button type="submit" className={styles.submit}>
-                  {editId !== null ? "Update Candidate" : "Register Candidate"}
+                <button 
+                  type="submit" 
+                  className={styles.submit}
+                  disabled={submitting}
+                >
+                  {submitting ? "Processing..." : 
+                   editId !== null ? "Update Candidate" : "Add Candidate"}
                 </button>
               </div>
             </div>
           </form>
         </div>
 
-        {/* Table Section - Replicated from Personnel Register */}
+        {/* Table Section */}
         <div className={styles.tableHeaderSection}>
           <h2>All Recruitment Records</h2>
           {renderPaginationButtons()}
@@ -743,54 +1225,73 @@ const RecruitmentPersonnel = () => {
           <table className={styles.table}>
             <thead>
               <tr>
+                <th>Photo</th>
                 <th>Candidate</th>
                 <th>Position</th>
+                <th>Username</th>
+                <th>Password</th>
                 <th>Application Date</th>
                 <th>Stage</th>
                 <th>Interview Date</th>
                 <th>Status</th>
+                <th>Resume</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {paginated.length === 0 ? (
+              {loading ? (
                 <tr>
-                  <td
-                    colSpan="7"
-                    style={{ textAlign: "center", padding: "40px" }}
-                  >
+                  <td colSpan="11" style={{ textAlign: "center", padding: "40px" }}>
+                    <div style={{ fontSize: "48px", marginBottom: "16px" }}>
+                      ⏳
+                    </div>
+                    <h3 style={{ fontSize: "18px", fontWeight: "600", color: "#2b2b2b" }}>
+                      Loading recruitment data...
+                    </h3>
+                  </td>
+                </tr>
+              ) : paginated.length === 0 ? (
+                <tr>
+                  <td colSpan="11" style={{ textAlign: "center", padding: "40px" }}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>
                       📇
                     </div>
-                    <h3
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: "600",
-                        color: "#2b2b2b",
-                        marginBottom: "8px",
-                      }}
-                    >
+                    <h3 style={{ fontSize: "18px", fontWeight: "600", color: "#2b2b2b" }}>
                       No Recruitment Records
                     </h3>
                     <p style={{ fontSize: "14px", color: "#999" }}>
-                      Recruitment records are empty - add your first candidate
+                      Add your first candidate to get started
                     </p>
                   </td>
                 </tr>
               ) : (
                 paginated.map((record) => (
                   <tr key={record.id}>
+                    <td>
+                      {record.photo_url ? (
+                        <div className={styles.photoCell}>
+                          <img 
+                            src={record.photo_url} 
+                            alt={record.candidate}
+                            className={styles.tablePhoto}
+                            onClick={() => viewPhoto(record.photo_url)}
+                            title="Click to view full photo"
+                          />
+                        </div>
+                      ) : (
+                        <div className={styles.noPhoto}>No Photo</div>
+                      )}
+                    </td>
                     <td>{record.candidate}</td>
                     <td>{record.position}</td>
-                    <td>{formatDate(record.applicationDate)}</td>
+                    <td>{record.username || "N/A"}</td>
+                    <PasswordCell password={record.password} />
+                    <td>{formatDate(record.application_date)}</td>
                     <td>
                       <span
                         className={styles.status}
                         style={{
-                          backgroundColor: getOptionColor(
-                            "stage",
-                            record.stage
-                          ),
+                          backgroundColor: getOptionColor("stage", record.stage),
                           color: "#fff",
                           padding: "6px 12px",
                           borderRadius: "20px",
@@ -801,15 +1302,12 @@ const RecruitmentPersonnel = () => {
                         {record.stage}
                       </span>
                     </td>
-                    <td>{formatDate(record.interviewDate)}</td>
+                    <td>{formatDate(record.interview_date)}</td>
                     <td>
                       <span
                         className={styles.status}
                         style={{
-                          backgroundColor: getOptionColor(
-                            "status",
-                            record.status
-                          ),
+                          backgroundColor: getOptionColor("status", record.status),
                           color: "#fff",
                           padding: "6px 12px",
                           borderRadius: "20px",
@@ -821,18 +1319,40 @@ const RecruitmentPersonnel = () => {
                       </span>
                     </td>
                     <td>
-                      <button
-                        className={styles.editBtn}
-                        onClick={() => handleEdit(record.id)}
-                      >
-                        ✏️ Edit
-                      </button>
-                      <button
-                        className={styles.deleteBtn}
-                        onClick={() => handleDelete(record.id)}
-                      >
-                        Delete
-                      </button>
+                      {record.resume_url ? (
+                        <div className={styles.resumeCell}>
+                          <button
+                            className={styles.resumeBtn}
+                            onClick={() => viewResume(record.resume_url)}
+                            title={`View ${getFileNameFromUrl(record.resume_url)}`}
+                          >
+                            📄 View Resume
+                          </button>
+                          <div className={styles.resumeInfo}>
+                            <small>{getFileNameFromUrl(record.resume_url)}</small>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className={styles.noResume}>No Resume</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className={styles.actionButtons}>
+                        <button
+                          className={styles.editBtn}
+                          onClick={() => handleEdit(record.id)}
+                          disabled={submitting}
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          className={styles.deleteBtn}
+                          onClick={() => handleDelete(record.id)}
+                          disabled={submitting}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -852,7 +1372,7 @@ const RecruitmentPersonnel = () => {
                 </button>
               </div>
               <div className={styles.modalBody}>
-                <p>Are you sure you want to delete this candidate record?</p>
+                <p>Are you sure you want to delete this candidate record? This will also delete associated files.</p>
                 <div className={styles.modalActions}>
                   <button onClick={cancelDelete} className={styles.cancelBtn}>
                     Cancel
@@ -860,8 +1380,9 @@ const RecruitmentPersonnel = () => {
                   <button
                     onClick={confirmDelete}
                     className={styles.deleteConfirmBtn}
+                    disabled={submitting}
                   >
-                    Delete
+                    {submitting ? "Deleting..." : "Delete"}
                   </button>
                 </div>
               </div>
@@ -882,147 +1403,261 @@ const RecruitmentPersonnel = () => {
                   &times;
                 </button>
               </div>
-              <form className={styles.editForm} onSubmit={handleUpdate}>
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="editCandidate">Candidate Name</label>
-                    <input
-                      type="text"
-                      id="editCandidate"
-                      value={formData.candidate}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          candidate: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="editPosition">Position</label>
-                    <input
-                      type="text"
-                      id="editPosition"
-                      value={formData.position}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          position: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="editApplicationDate">
-                      Application Date
-                    </label>
-                    <Flatpickr
-                      value={formData.applicationDate}
-                      onChange={([date]) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          applicationDate: date,
-                        }))
-                      }
-                      options={{
-                        dateFormat: "Y-m-d",
-                        maxDate: "today",
-                      }}
-                    />
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="editStage">Stage</label>
-                    <select
-                      id="editStage"
-                      value={formData.stage}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          stage: e.target.value,
-                        }))
-                      }
-                      required
-                      style={{
-                        backgroundColor:
-                          getOptionColor("stage", formData.stage) || "#fff",
-                        color: getOptionColor("stage", formData.stage)
-                          ? "#fff"
-                          : "#000",
-                      }}
-                    >
-                      <option value="" disabled>
-                        Select Stage
-                      </option>
-                      <option value="Applied">Applied</option>
-                      <option value="Screening">Screening</option>
-                      <option value="Interview">Interview</option>
-                      <option value="Final Review">Final Review</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="editInterviewDate">Interview Date</label>
-                    <Flatpickr
-                      value={formData.interviewDate}
-                      onChange={([date]) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          interviewDate: date,
-                        }))
-                      }
-                      options={{
-                        dateFormat: "Y-m-d",
-                      }}
-                    />
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="editStatus">Status</label>
-                    <select
-                      id="editStatus"
-                      value={formData.status}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          status: e.target.value,
-                        }))
-                      }
-                      required
-                      style={{
-                        backgroundColor:
-                          getOptionColor("status", formData.status) || "#fff",
-                        color: getOptionColor("status", formData.status)
-                          ? "#fff"
-                          : "#000",
-                      }}
-                    >
-                      <option value="" disabled>
-                        Select Status
-                      </option>
-                      <option value="Pending">Pending</option>
-                      <option value="Approved">Approved</option>
-                      <option value="Rejected">Rejected</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className={styles.formActions}>
-                  <button
-                    type="button"
-                    className={styles.cancel}
-                    onClick={() => setShowEditModal(false)}
+              
+              {/* Upload Progress Bar for Edit Modal */}
+              {uploadProgress > 0 && uploadProgress < 100 && (
+                <div className={styles.progressBarContainer}>
+                  <div 
+                    className={styles.progressBar} 
+                    style={{ width: `${uploadProgress}%` }}
                   >
-                    Cancel
-                  </button>
-                  <button type="submit" className={styles.submit}>
-                    Save Changes
-                  </button>
+                    Uploading... {uploadProgress}%
+                  </div>
+                </div>
+              )}
+
+              <form className={styles.editForm} onSubmit={handleUpdateCandidate}>
+                <div className={styles.editFormLayout}>
+                  {/* Left: Photo Section */}
+                  <div className={styles.editPhotoSection}>
+                    <div className={styles.photoPreview}>
+                      {photoPreview ? (
+                        <img 
+                          src={photoPreview} 
+                          alt="Candidate preview" 
+                          className={styles.photoImage}
+                        />
+                      ) : (
+                        <span>No Photo</span>
+                      )}
+                    </div>
+                    <div className={styles.fileUpload}>
+                      <label htmlFor="editPhoto" className={styles.fileUploadLabel}>
+                        📂 Change Photo
+                      </label>
+                      <input
+                        type="file"
+                        id="editPhoto"
+                        accept="image/*"
+                        onChange={handlePhotoChange}
+                        disabled={submitting}
+                      />
+                      <span>{photoFile ? photoFile.name : "Keep current photo"}</span>
+                    </div>
+                    
+                    {/* Resume Upload for Edit */}
+                    <div className={styles.fileUpload} style={{ marginTop: '20px' }}>
+                      <label htmlFor="editResume" className={styles.fileUploadLabel}>
+                        📄 Change Resume
+                      </label>
+                      <input
+                        type="file"
+                        id="editResume"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={handleResumeChange}
+                        disabled={submitting}
+                      />
+                      <span>{resumeFileName || "Keep current resume"}</span>
+                    </div>
+                  </div>
+
+                  {/* Right: Form Fields */}
+                  <div className={styles.editFieldsSection}>
+                    {/* Username and Password Fields for Edit */}
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editUsername">Username</label>
+                        <input
+                          type="text"
+                          id="editUsername"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          required
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editPassword">Password</label>
+                        <div className={styles.passwordInputGroup}>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            id="editPassword"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            disabled={submitting}
+                          />
+                          <button
+                            type="button"
+                            className={styles.showPasswordBtn}
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? "🙈" : "👁"}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          className={styles.generatePasswordBtn}
+                          onClick={handleGeneratePassword}
+                          style={{ marginTop: '5px' }}
+                          disabled={submitting}
+                        >
+                          Generate New Password
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editCandidate">Candidate Name</label>
+                        <input
+                          type="text"
+                          id="editCandidate"
+                          value={formData.candidate}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              candidate: e.target.value,
+                            }))
+                          }
+                          required
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editPosition">Position</label>
+                        <input
+                          type="text"
+                          id="editPosition"
+                          value={formData.position}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              position: e.target.value,
+                            }))
+                          }
+                          required
+                          disabled={submitting}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editApplicationDate">Application Date</label>
+                        <Flatpickr
+                          value={formData.applicationDate}
+                          onChange={([date]) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              applicationDate: date ? date.toISOString().split('T')[0] : "",
+                            }))
+                          }
+                          options={{
+                            dateFormat: "Y-m-d",
+                            maxDate: "today",
+                          }}
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editStage">Stage</label>
+                        <select
+                          id="editStage"
+                          value={formData.stage}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              stage: e.target.value,
+                            }))
+                          }
+                          required
+                          disabled={submitting}
+                          style={{
+                            backgroundColor:
+                              getOptionColor("stage", formData.stage) || "#fff",
+                            color: getOptionColor("stage", formData.stage)
+                              ? "#fff"
+                              : "#000",
+                          }}
+                        >
+                          <option value="" disabled>
+                            Select Stage
+                          </option>
+                          <option value="Applied">Applied</option>
+                          <option value="Screening">Screening</option>
+                          <option value="Interview">Interview</option>
+                          <option value="Final Review">Final Review</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editInterviewDate">Interview Date</label>
+                        <Flatpickr
+                          value={formData.interviewDate}
+                          onChange={([date]) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              interviewDate: date ? date.toISOString().split('T')[0] : "",
+                            }))
+                          }
+                          options={{
+                            dateFormat: "Y-m-d",
+                          }}
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="editStatus">Status</label>
+                        <select
+                          id="editStatus"
+                          value={formData.status}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              status: e.target.value,
+                            }))
+                          }
+                          required
+                          disabled={submitting}
+                          style={{
+                            backgroundColor:
+                              getOptionColor("status", formData.status) || "#fff",
+                            color: getOptionColor("status", formData.status)
+                              ? "#fff"
+                              : "#000",
+                          }}
+                        >
+                          <option value="" disabled>
+                            Select Status
+                          </option>
+                          <option value="Pending">Pending</option>
+                          <option value="Approved">Approved</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className={styles.formActions}>
+                      <button
+                        type="button"
+                        className={styles.cancel}
+                        onClick={() => setShowEditModal(false)}
+                        disabled={submitting}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className={styles.submit}
+                        disabled={submitting}
+                      >
+                        {submitting ? "Saving..." : "Save Changes"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </form>
             </div>

@@ -1,3 +1,4 @@
+// components/PersonnelRegister.jsx
 import React, { useState, useEffect, useRef } from "react";
 import Flatpickr from "react-flatpickr";
 import "flatpickr/dist/flatpickr.css";
@@ -7,13 +8,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { useSidebar } from "./SidebarContext.jsx";
 import "react-toastify/dist/ReactToastify.css";
 import { Title, Meta } from "react-head";
-import {
-  getAll,
-  addRecord,
-  deleteRecord,
-  updateRecord,
-  STORE_PERSONNEL,
-} from "./db";
+import { supabase } from "../lib/supabaseClient";
 import styles from "./PersonnelRegister.module.css";
 
 const PersonnelRegister = () => {
@@ -44,19 +39,18 @@ const PersonnelRegister = () => {
   const [deleteName, setDeleteName] = useState("");
   const [generatedUsername, setGeneratedUsername] = useState("");
   const [generatedPassword, setGeneratedPassword] = useState("");
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 5;
 
   // Rank options
   const rankOptions = [
-    { rank: "FO1", name: "Fire Officer 1", image: "/src/assets/FO1.png" },
-    { rank: "FO2", name: "Fire Officer 2", image: "FO2.png" },
-    { rank: "FO3", name: "Fire Officer 3", image: "FO3.png" },
-    { rank: "SFO1", name: "Senior Fire Officer 1", image: "SFO1.png" },
-    { rank: "SFO2", name: "Senior Fire Officer 2", image: "SFO2.png" },
-    { rank: "SFO3", name: "Senior Fire Officer 3", image: "SFO3.png" },
-    { rank: "SFO4", name: "Senior Fire Officer 4", image: "SFO4.png" },
+    { rank: "FO1", name: "Fire Officer 1", image: "/FO1.png" },
+    { rank: "FO2", name: "Fire Officer 2", image: "/FO2.png" },
+    { rank: "FO3", name: "Fire Officer 3", image: "/FO3.png" },
+    { rank: "SFO1", name: "Senior Fire Officer 1", image: "/SFO1.png" },
+    { rank: "SFO2", name: "Senior Fire Officer 2", image: "/SFO2.png" },
+    { rank: "SFO3", name: "Senior Fire Officer 3", image: "/SFO3.png" },
+    { rank: "SFO4", name: "Senior Fire Officer 4", image: "/SFO4.png" },
   ];
 
   // Form state
@@ -72,12 +66,11 @@ const PersonnelRegister = () => {
     retirement_date: "",
   });
 
-  // Format date for display in table
+  // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return "-";
     try {
-      const date =
-        dateString instanceof Date ? dateString : new Date(dateString);
+      const date = dateString instanceof Date ? dateString : new Date(dateString);
       return date.toLocaleDateString("en-US", {
         year: "numeric",
         month: "long",
@@ -89,12 +82,11 @@ const PersonnelRegister = () => {
     }
   };
 
-  // Format date for Flatpickr input
+  // Format date for input
   const formatDateForInput = (dateString) => {
     if (!dateString) return "";
     try {
-      const date =
-        dateString instanceof Date ? dateString : new Date(dateString);
+      const date = dateString instanceof Date ? dateString : new Date(dateString);
       return date.toISOString().split("T")[0];
     } catch (error) {
       console.error("Error formatting date for input:", error);
@@ -114,15 +106,27 @@ const PersonnelRegister = () => {
     retirement_date: "",
   });
 
-  // Load personnel from IndexDB
+  // Load personnel
   const loadPersonnel = async () => {
     try {
       setLoading(true);
       setError("");
-      const personnelData = await getAll(STORE_PERSONNEL);
-      setPersonnel(personnelData);
+      
+      const { data, error } = await supabase
+        .from("personnel")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Supabase error loading personnel:", error);
+        throw error;
+      }
+      
+      setPersonnel(data || []);
     } catch (error) {
+      console.error("Error loading personnel:", error);
       setError("Failed to load personnel data");
+      toast.error("Failed to load personnel data");
     } finally {
       setLoading(false);
     }
@@ -132,7 +136,48 @@ const PersonnelRegister = () => {
     loadPersonnel();
   }, []);
 
-  // Pagination functions
+  // Upload image to Supabase Storage with RLS bypass
+  const uploadImage = async (file, folder = "personnel") => {
+  try {
+    // ... (Keep your existing file size and type validation logic here) ...
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+    const filePath = `${folder}/${fileName}`;
+
+    // Simple upload attempt
+    const { data, error: uploadError } = await supabase.storage
+      .from('personnel-images') // Ensure this name matches the bucket in your dashboard
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (uploadError) {
+      console.error("Upload error:", uploadError);
+      // Stop if the bucket simply doesn't exist
+      if (uploadError.message?.includes('not found') || uploadError.message?.includes('does not exist')) {
+        toast.error("Storage bucket 'personnel-images' not found. Please create it in the Supabase dashboard.");
+        return null;
+      }
+      toast.error(`Upload failed: ${uploadError.message}`);
+      return null;
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('personnel-images')
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  } catch (error) {
+    console.error("Error uploading image:", error);
+    toast.error("Failed to upload image. Please try again.");
+    return null;
+  }
+};
+
+  // Pagination
   const paginate = (data, page, rows) => {
     const start = (page - 1) * rows;
     return data.slice(start, start + rows);
@@ -148,9 +193,7 @@ const PersonnelRegister = () => {
     buttons.push(
       <button
         key="prev"
-        className={`${styles.paginationBtn} ${
-          hasNoData ? styles.disabled : ""
-        }`}
+        className={`${styles.paginationBtn} ${hasNoData ? styles.disabled : ""}`}
         disabled={currentPage === 1 || hasNoData}
         onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
       >
@@ -240,9 +283,7 @@ const PersonnelRegister = () => {
     buttons.push(
       <button
         key="next"
-        className={`${styles.paginationBtn} ${
-          hasNoData ? styles.disabled : ""
-        }`}
+        className={`${styles.paginationBtn} ${hasNoData ? styles.disabled : ""}`}
         disabled={currentPage === pageCount || hasNoData}
         onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))}
       >
@@ -258,8 +299,7 @@ const PersonnelRegister = () => {
   };
 
   const generatePassword = (length = 8) => {
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$";
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$";
     return Array.from(
       { length },
       () => chars[Math.floor(Math.random() * chars.length)]
@@ -267,11 +307,14 @@ const PersonnelRegister = () => {
   };
 
   const generateUsername = (first, middle, last) => {
-    return `${first}${middle ? middle[0] : ""}${last}`
+    const baseUsername = `${first}${middle ? middle[0] : ""}${last}`
       .toLowerCase()
       .replace(/\s+/g, "");
+    
+    return `${baseUsername}${Date.now().toString().slice(-4)}`;
   };
-  // Generate username in real-time when name fields change
+
+  // Generate username
   useEffect(() => {
     if (formData.first_name || formData.last_name) {
       const username = generateUsername(
@@ -285,12 +328,13 @@ const PersonnelRegister = () => {
     }
   }, [formData.first_name, formData.middle_name, formData.last_name]);
 
-  // Generate password when form is shown or when needed
+  // Generate password
   useEffect(() => {
     if (showForm) {
       setGeneratedPassword(generatePassword());
     }
   }, [showForm]);
+
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -319,19 +363,6 @@ const PersonnelRegister = () => {
     }
   };
 
-  const handleEditSave = async (updatedPerson) => {
-    try {
-      await updateRecord(STORE_PERSONNEL, updatedPerson);
-      setPersonnel((prev) =>
-        prev.map((p) => (p.id === updatedPerson.id ? updatedPerson : p))
-      );
-      toast.success("Personnel updated successfully!");
-    } catch (error) {
-      console.error("Error updating personnel:", error);
-      toast.error("Failed to update personnel.");
-    }
-  };
-
   const clearPhoto = () => {
     setPhotoPreview(null);
     setFileChosen("No Photo selected");
@@ -355,6 +386,7 @@ const PersonnelRegister = () => {
     try {
       setError("");
 
+      // Validation
       if (!formData.first_name?.trim() || !formData.last_name?.trim()) {
         toast.error("First name and last name are required!");
         return;
@@ -365,35 +397,115 @@ const PersonnelRegister = () => {
         return;
       }
 
-      // Use the pre-generated username and password
+      // Validate dates
+      const birthDate = formData.birth_date ? new Date(formData.birth_date) : null;
+      const dateHired = formData.date_hired ? new Date(formData.date_hired) : null;
+      const retirementDate = formData.retirement_date ? new Date(formData.retirement_date) : null;
+      const now = new Date();
+
+      if (birthDate && dateHired && birthDate > dateHired) {
+        toast.error("Birth date cannot be after date hired!");
+        return;
+      }
+
+      if (dateHired && retirementDate && dateHired > retirementDate) {
+        toast.error("Date hired cannot be after retirement date!");
+        return;
+      }
+
+      if (birthDate && birthDate > now) {
+        toast.error("Birth date cannot be in the future!");
+        return;
+      }
+
+      if (dateHired && dateHired > now) {
+        toast.error("Date hired cannot be in the future!");
+        return;
+      }
+
+      // Prepare data
       const username = generatedUsername;
       const password = generatedPassword;
 
       const newPersonnel = {
-        ...formData,
+        badge_number: formData.badge_number || null,
+        first_name: formData.first_name.trim(),
+        middle_name: formData.middle_name?.trim() || null,
+        last_name: formData.last_name.trim(),
         username,
         password,
+        designation: formData.designation?.trim() || null,
+        station: formData.station?.trim() || null,
         rank: selectedRank,
         rank_image: selectedRankImage,
-        photoURL: photoPreview,
         documents: [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        birth_date: formData.birth_date ? new Date(formData.birth_date).toISOString() : null,
+        date_hired: formData.date_hired ? new Date(formData.date_hired).toISOString() : null,
+        retirement_date: formData.retirement_date ? new Date(formData.retirement_date).toISOString() : null,
       };
 
-      await addRecord(STORE_PERSONNEL, newPersonnel);
+      console.log("Attempting to insert personnel:", newPersonnel);
+
+      // Upload photo if exists
+      let photoURL = null;
+      if (photoPreview && photoInputRef.current?.files?.[0]) {
+        console.log("Uploading photo...");
+        photoURL = await uploadImage(photoInputRef.current.files[0]);
+        if (photoURL) {
+          newPersonnel.photo_url = photoURL;
+          newPersonnel.photo_path = photoURL;
+        }
+      }
+
+      // Insert into Supabase
+      const { data, error: insertError } = await supabase
+        .from("personnel")
+        .insert([newPersonnel])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Supabase insert error:", insertError);
+        
+        if (insertError.code === '42501') {
+          toast.error("Permission denied. Please check Row Level Security policies.");
+          
+          // Try to disable RLS temporarily or check policies
+          try {
+            // You might need to run these SQL commands in Supabase dashboard:
+            // ALTER TABLE personnel DISABLE ROW LEVEL SECURITY;
+            // or create proper policies
+            toast.info("Please check RLS policies in Supabase dashboard.");
+          } catch (rlError) {
+            console.error("RLS error:", rlError);
+          }
+        } else if (insertError.code === '23505') {
+          toast.error("Username or badge number already exists. Please use different values.");
+        } else if (insertError.code === '23514') {
+          toast.error("Invalid date sequence. Please check: Birth Date ≤ Date Hired ≤ Retirement Date");
+        } else {
+          toast.error(`Failed to add personnel: ${insertError.message}`);
+        }
+        throw insertError;
+      }
+
+      console.log("Insert successful:", data);
+
       await loadPersonnel();
       resetForm();
       setShowForm(false);
 
-      setTimeout(() => {
-        toast.success("Personnel registered successfully!");
-      }, 100);
+      toast.success("Personnel registered successfully!");
     } catch (error) {
       console.error("Error adding personnel:", error);
-      toast.error("Failed to add personnel. Please try again.");
+      if (!error.message?.includes("already exists") && 
+          !error.message?.includes("Permission denied") &&
+          !error.message?.includes("Invalid date")) {
+        toast.error("Failed to add personnel. Please try again.");
+      }
     }
   };
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -404,59 +516,104 @@ const PersonnelRegister = () => {
         return;
       }
 
-      const finalPhotoURL = editPhotoPreview || editingPerson.photoURL;
-      const originalPerson = personnel.find((p) => p.id === editingPerson.id);
+      // Validate dates
+      const birthDate = editFormData.birth_date ? new Date(editFormData.birth_date) : null;
+      const dateHired = editFormData.date_hired ? new Date(editFormData.date_hired) : null;
+      const retirementDate = editFormData.retirement_date ? new Date(editFormData.retirement_date) : null;
+      const now = new Date();
 
-      const hasChanges =
-        JSON.stringify({
-          ...originalPerson,
-          photoURL: originalPerson?.photoURL || null,
-        }) !==
-        JSON.stringify({
-          ...editingPerson,
-          ...editFormData,
-          rank: editSelectedRank,
-          rank_image: editSelectedRankImage,
-          photoURL: finalPhotoURL,
-        });
-
-      if (!hasChanges) {
-        toast.info("No changes detected. Modal closed.");
-        setShowEditModal(false);
-        setEditingPerson(null);
-        setEditPhotoPreview(null);
+      if (birthDate && dateHired && birthDate > dateHired) {
+        toast.error("Birth date cannot be after date hired!");
         return;
       }
 
-      // Preserve the original password and username
+      if (dateHired && retirementDate && dateHired > retirementDate) {
+        toast.error("Date hired cannot be after retirement date!");
+        return;
+      }
+
+      if (birthDate && birthDate > now) {
+        toast.error("Birth date cannot be in the future!");
+        return;
+      }
+
+      if (dateHired && dateHired > now) {
+        toast.error("Date hired cannot be in the future!");
+        return;
+      }
+
+      // Upload new photo
+      let finalPhotoURL = editingPerson.photo_url;
+      let finalPhotoPath = editingPerson.photo_path;
+      if (editPhotoPreview && editPhotoInputRef.current?.files?.[0]) {
+        finalPhotoURL = await uploadImage(editPhotoInputRef.current.files[0]);
+        finalPhotoPath = finalPhotoURL;
+      } else if (isPhotoRemoved) {
+        finalPhotoURL = null;
+        finalPhotoPath = null;
+      }
+
       const updatedPersonnel = {
         id: editingPerson.id,
-        ...editFormData,
+        badge_number: editFormData.badge_number || null,
+        first_name: editFormData.first_name.trim(),
+        middle_name: editFormData.middle_name?.trim() || null,
+        last_name: editFormData.last_name.trim(),
+        designation: editFormData.designation?.trim() || null,
+        station: editFormData.station?.trim() || null,
         rank: editSelectedRank,
         rank_image: editSelectedRankImage,
-        photoURL: finalPhotoURL,
-        username: editingPerson.username,
-        password: editingPerson.password,
-        created_at: editingPerson.created_at,
+        photo_url: finalPhotoURL,
+        photo_path: finalPhotoPath,
+        birth_date: editFormData.birth_date ? new Date(editFormData.birth_date).toISOString() : null,
+        date_hired: editFormData.date_hired ? new Date(editFormData.date_hired).toISOString() : null,
+        retirement_date: editFormData.retirement_date ? new Date(editFormData.retirement_date).toISOString() : null,
         updated_at: new Date().toISOString(),
       };
 
-      await updateRecord(STORE_PERSONNEL, updatedPersonnel);
+      console.log("Updating personnel:", updatedPersonnel);
+
+      // Update in Supabase
+      const { data, error: updateError } = await supabase
+        .from("personnel")
+        .update(updatedPersonnel)
+        .eq("id", editingPerson.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error("Supabase update error:", updateError);
+        
+        if (updateError.code === '42501') {
+          toast.error("Permission denied. Please check Row Level Security policies.");
+        } else if (updateError.code === '23514') {
+          toast.error("Invalid date sequence. Please check: Birth Date ≤ Date Hired ≤ Retirement Date");
+        } else {
+          toast.error(`Failed to update personnel: ${updateError.message}`);
+        }
+        throw updateError;
+      }
+
+      console.log("Update successful:", data);
 
       setPersonnel((prev) =>
-        prev.map((p) => (p.id === updatedPersonnel.id ? updatedPersonnel : p))
+        prev.map((p) => (p.id === editingPerson.id ? data : p))
       );
 
       setShowEditModal(false);
       setEditingPerson(null);
       setEditPhotoPreview(null);
+      setIsPhotoRemoved(false);
 
       toast.success("Personnel updated successfully!");
     } catch (error) {
       console.error("Error updating personnel:", error);
-      toast.error("Failed to update personnel. Please try again.");
+      if (!error.message) {
+        toast.error("Failed to update personnel. Please try again.");
+      }
     }
   };
+
   const handleCloseEditModal = () => {
     if (editingPerson) {
       toast.info("No changes made. Modal closed.");
@@ -485,7 +642,7 @@ const PersonnelRegister = () => {
         station: person.station || "",
         birth_date: formatDateForInput(person.birth_date),
         date_hired: formatDateForInput(person.date_hired),
-        retirement_date: formatDateForInput(person.retirement_date), // Add retirement date
+        retirement_date: formatDateForInput(person.retirement_date),
       });
       setEditSelectedRank(person.rank || "");
       setEditSelectedRankImage(person.rank_image || "");
@@ -508,7 +665,7 @@ const PersonnelRegister = () => {
       station: "",
       birth_date: "",
       date_hired: "",
-      retirement_date: "", // Add retirement date
+      retirement_date: "",
     });
     setSelectedRank("");
     setSelectedRankImage("");
@@ -539,7 +696,22 @@ const PersonnelRegister = () => {
         return;
       }
 
-      await deleteRecord(STORE_PERSONNEL, deleteId);
+      const { error } = await supabase
+        .from("personnel")
+        .delete()
+        .eq("id", deleteId);
+
+      if (error) {
+        console.error("Supabase delete error:", error);
+        
+        if (error.code === '42501') {
+          toast.error("Permission denied. Please check Row Level Security policies.");
+        } else {
+          toast.error("Failed to delete personnel.");
+        }
+        throw error;
+      }
+
       setPersonnel((prev) => prev.filter((p) => p.id !== deleteId));
       toast.warn("Personnel deleted successfully!");
       setShowDeleteConfirm(false);
@@ -547,7 +719,9 @@ const PersonnelRegister = () => {
       setDeleteName("");
     } catch (error) {
       console.error("Error deleting personnel:", error);
-      toast.error("Failed to delete personnel.");
+      if (!error.message?.includes("Permission denied")) {
+        toast.error("Failed to delete personnel.");
+      }
     }
   };
 
@@ -601,7 +775,6 @@ const PersonnelRegister = () => {
       </td>
     );
   };
-  // Calculate retirement date (optional - 60 years from birth date)
 
   // Handle click outside modals
   useEffect(() => {
@@ -612,10 +785,7 @@ const PersonnelRegister = () => {
       if (showRankModal && event.target.classList.contains(styles.rankModal)) {
         setShowRankModal(false);
       }
-      if (
-        showEditRankModal &&
-        event.target.classList.contains(styles.rankModal)
-      ) {
+      if (showEditRankModal && event.target.classList.contains(styles.rankModal)) {
         setShowEditRankModal(false);
       }
     };
@@ -633,9 +803,7 @@ const PersonnelRegister = () => {
         <Meta name="robots" content="noindex, nofollow" />
         <Hamburger />
         <Sidebar />
-        <div
-          className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}
-        >
+        <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
           <div style={{ textAlign: "center", padding: "50px" }}>
             Loading personnel data...
           </div>
@@ -689,7 +857,6 @@ const PersonnelRegister = () => {
             onSubmit={handleSubmit}
             ref={formRef}
           >
-            {/* Left: Photo */}
             <div className={styles.prPhotoSection}>
               <div className={styles.prPhotoPreview} id="photo-preview">
                 {photoPreview ? (
@@ -723,7 +890,6 @@ const PersonnelRegister = () => {
               )}
             </div>
 
-            {/* Right: Info fields */}
             <div className={styles.prInfoSection}>
               <div className={styles.prFormRow}>
                 <div className={styles.prFormGroup}>
@@ -740,21 +906,14 @@ const PersonnelRegister = () => {
                           badge_number: e.target.value,
                         }))
                       }
-                      required
                     />
-                    <label
-                      htmlFor="badge-number"
-                      className={styles.floatingLabel}
-                    >
-                      Badge Number
+                    <label htmlFor="badge-number" className={styles.floatingLabel}>
+                      Badge Number (Optional)
                     </label>
                   </div>
                 </div>
                 <div className={styles.prFormGroup}>
-                  <div
-                    className={styles.floatingGroup}
-                    id="rank-floating-group"
-                  >
+                  <div className={styles.floatingGroup} id="rank-floating-group">
                     <button
                       type="button"
                       id="rank-trigger"
@@ -764,22 +923,15 @@ const PersonnelRegister = () => {
                       <div className={styles.selectedRank}>
                         {selectedRank ? (
                           <>
-                            <div
-                              className={`${styles.rankIcon} ${selectedRank}`}
-                            >
+                            <div className={`${styles.rankIcon} ${selectedRank}`}>
                               <img src={selectedRankImage} alt={selectedRank} />
                             </div>
                             <span>
-                              {
-                                rankOptions.find((r) => r.rank === selectedRank)
-                                  ?.name
-                              }
+                              {rankOptions.find((r) => r.rank === selectedRank)?.name}
                             </span>
                           </>
                         ) : (
-                          <span className={styles.placeholder}>
-                            Select Rank
-                          </span>
+                          <span className={styles.placeholder}>Select Rank *</span>
                         )}
                       </div>
                     </button>
@@ -811,11 +963,8 @@ const PersonnelRegister = () => {
                       }
                       required
                     />
-                    <label
-                      htmlFor="first-name"
-                      className={styles.floatingLabel}
-                    >
-                      First Name
+                    <label htmlFor="first-name" className={styles.floatingLabel}>
+                      First Name *
                     </label>
                   </div>
                 </div>
@@ -834,10 +983,7 @@ const PersonnelRegister = () => {
                         }))
                       }
                     />
-                    <label
-                      htmlFor="middle-name"
-                      className={styles.floatingLabel}
-                    >
+                    <label htmlFor="middle-name" className={styles.floatingLabel}>
                       Middle Name
                     </label>
                   </div>
@@ -859,7 +1005,7 @@ const PersonnelRegister = () => {
                       required
                     />
                     <label htmlFor="last-name" className={styles.floatingLabel}>
-                      Last Name
+                      Last Name *
                     </label>
                   </div>
                 </div>
@@ -880,12 +1026,8 @@ const PersonnelRegister = () => {
                           designation: e.target.value,
                         }))
                       }
-                      required
                     />
-                    <label
-                      htmlFor="designation"
-                      className={styles.floatingLabel}
-                    >
+                    <label htmlFor="designation" className={styles.floatingLabel}>
                       Designation
                     </label>
                   </div>
@@ -904,7 +1046,6 @@ const PersonnelRegister = () => {
                           station: e.target.value,
                         }))
                       }
-                      required
                     />
                     <label htmlFor="station" className={styles.floatingLabel}>
                       Station Assignment
@@ -912,7 +1053,7 @@ const PersonnelRegister = () => {
                   </div>
                 </div>
               </div>
-              {/* Username and Password Preview Section */}
+              
               <div className={styles.prFormRow}>
                 <div className={styles.prFormGroup}>
                   <div className={styles.floatingGroup}>
@@ -925,10 +1066,7 @@ const PersonnelRegister = () => {
                       readOnly
                       disabled
                     />
-                    <label
-                      htmlFor="username-preview"
-                      className={styles.floatingLabel}
-                    >
+                    <label htmlFor="username-preview" className={styles.floatingLabel}>
                       Username (Auto-generated)
                     </label>
                   </div>
@@ -944,10 +1082,7 @@ const PersonnelRegister = () => {
                       readOnly
                       disabled
                     />
-                    <label
-                      htmlFor="password-preview"
-                      className={styles.floatingLabel}
-                    >
+                    <label htmlFor="password-preview" className={styles.floatingLabel}>
                       Password (Auto-generated)
                     </label>
                   </div>
@@ -960,6 +1095,7 @@ const PersonnelRegister = () => {
                   </button>
                 </div>
               </div>
+              
               <div className={styles.prFormRow}>
                 <div className={styles.prFormGroup}>
                   <div className={styles.floatingGroup}>
@@ -975,10 +1111,7 @@ const PersonnelRegister = () => {
                       className={styles.floatingInput}
                       placeholder=" "
                     />
-                    <label
-                      htmlFor="birth-date"
-                      className={styles.floatingLabel}
-                    >
+                    <label htmlFor="birth-date" className={styles.floatingLabel}>
                       Birth Date
                     </label>
                   </div>
@@ -997,17 +1130,17 @@ const PersonnelRegister = () => {
                       className={styles.floatingInput}
                       placeholder=" "
                     />
-                    <label
-                      htmlFor="date-hired"
-                      className={styles.floatingLabel}
-                    >
+                    <label htmlFor="date-hired" className={styles.floatingLabel}>
                       Date Hired
                     </label>
                   </div>
                 </div>
               </div>
-              
-           
+
+              <div className={styles.prDateValidationNote}>
+                <small>Note: Birth Date ≤ Date Hired ≤ Retirement Date</small>
+              </div>
+
               <div className={styles.prFormActions}>
                 <button
                   type="button"
@@ -1052,26 +1185,13 @@ const PersonnelRegister = () => {
             <tbody>
               {currentPersonnel.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan="90"
-                    style={{ textAlign: "center", padding: "40px" }}
-                  >
-                    <div style={{ fontSize: "48px", marginBottom: "16px" }}>
-                      📇
-                    </div>
-                    <h3
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: "600",
-                        color: "#2b2b2b",
-                        marginBottom: "8px",
-                      }}
-                    >
+                  <td colSpan="14" style={{ textAlign: "center", padding: "40px" }}>
+                    <div style={{ fontSize: "48px", marginBottom: "16px" }}>📇</div>
+                    <h3 style={{ fontSize: "18px", fontWeight: "600", color: "#2b2b2b", marginBottom: "8px" }}>
                       No Personnel Registered
                     </h3>
                     <p style={{ fontSize: "14px", color: "#999" }}>
-                      BFP personnel register is empty - add your first team
-                      member
+                      BFP personnel register is empty - add your first team member
                     </p>
                   </td>
                 </tr>
@@ -1079,23 +1199,27 @@ const PersonnelRegister = () => {
                 currentPersonnel.map((person) => (
                   <tr key={person.id}>
                     <td>{getRankDisplay(person)}</td>
-                    <td>{person.badge_number}</td>
+                    <td>{person.badge_number || "-"}</td>
                     <td>{person.first_name}</td>
-                    <td>{person.middle_name}</td>
+                    <td>{person.middle_name || "-"}</td>
                     <td>{person.last_name}</td>
-                    <td>{person.designation}</td>
-                    <td>{person.station}</td>
+                    <td>{person.designation || "-"}</td>
+                    <td>{person.station || "-"}</td>
                     <td>{formatDate(person.birth_date)}</td>
                     <td>{formatDate(person.date_hired)}</td>
                     <td>{formatDate(person.retirement_date)}</td>
                     <td>{person.username}</td>
                     <PasswordCell password={person.password} />
                     <td>
-                      {person.photoURL ? (
+                      {person.photo_url ? (
                         <img
-                          src={person.photoURL}
+                          src={person.photo_url}
                           className={styles.prPhotoThumb}
                           alt="Photo"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = "https://via.placeholder.com/50";
+                          }}
                         />
                       ) : (
                         "No Photo"
@@ -1143,22 +1267,18 @@ const PersonnelRegister = () => {
             </div>
 
             <div className={styles.prEditModalLayout}>
-              {/* Left: Photo Section */}
               <div className={styles.prEditModalPhotoSection}>
                 <div className={styles.prEditModalPhotoPreview}>
                   {editPhotoPreview ? (
                     <img src={editPhotoPreview} alt="New Preview" />
-                  ) : editingPerson?.photoURL ? (
-                    <img src={editingPerson.photoURL} alt="Current" />
+                  ) : editingPerson?.photo_url ? (
+                    <img src={editingPerson.photo_url} alt="Current" />
                   ) : (
                     <span>No Photo</span>
                   )}
                 </div>
                 <div className={styles.prEditModalFileUpload}>
-                  <label
-                    htmlFor="edit-photo"
-                    className={styles.prEditModalFileUploadLabel}
-                  >
+                  <label htmlFor="edit-photo" className={styles.prEditModalFileUploadLabel}>
                     📂 Change Photo
                   </label>
                   <input
@@ -1170,7 +1290,7 @@ const PersonnelRegister = () => {
                   />
                   <span id="file-chosens">{EditfileChosen}</span>
                 </div>
-                {(editPhotoPreview || editingPerson?.photoURL) && (
+                {(editPhotoPreview || editingPerson?.photo_url) && (
                   <button
                     type="button"
                     className={styles.prEditModalClearBtn}
@@ -1181,7 +1301,6 @@ const PersonnelRegister = () => {
                 )}
               </div>
 
-              {/* Right: Form Fields */}
               <form id="edit-form" onSubmit={handleEditSubmit}>
                 <input type="hidden" id="edit-id" value={editingPerson?.id} />
 
@@ -1198,7 +1317,6 @@ const PersonnelRegister = () => {
                           badge_number: e.target.value,
                         }))
                       }
-                      required
                     />
                   </div>
                   <div className={styles.prFormGroup}>
@@ -1213,46 +1331,27 @@ const PersonnelRegister = () => {
                         <div className={styles.selectedRank}>
                           {editSelectedRank ? (
                             <>
-                              <div
-                                className={`${styles.rankIcon} ${editSelectedRank}`}
-                              >
-                                <img
-                                  src={editSelectedRankImage}
-                                  alt={editSelectedRank}
-                                />
+                              <div className={`${styles.rankIcon} ${editSelectedRank}`}>
+                                <img src={editSelectedRankImage} alt={editSelectedRank} />
                               </div>
                               <span>
-                                {
-                                  rankOptions.find(
-                                    (r) => r.rank === editSelectedRank
-                                  )?.name
-                                }
+                                {rankOptions.find((r) => r.rank === editSelectedRank)?.name}
                               </span>
                             </>
                           ) : (
-                            <span className={styles.placeholder}>
-                              Select Rank
-                            </span>
+                            <span className={styles.placeholder}>Select Rank</span>
                           )}
                         </div>
                       </button>
-                      <input
-                        type="hidden"
-                        id="edit-rank"
-                        value={editSelectedRank}
-                      />
-                      <input
-                        type="hidden"
-                        id="edit-rank-image"
-                        value={editSelectedRankImage}
-                      />
+                      <input type="hidden" id="edit-rank" value={editSelectedRank} />
+                      <input type="hidden" id="edit-rank-image" value={editSelectedRankImage} />
                     </div>
                   </div>
                 </div>
 
                 <div className={styles.prFormRow}>
                   <div className={styles.prFormGroup}>
-                    <label htmlFor="edit-first">First Name</label>
+                    <label htmlFor="edit-first">First Name *</label>
                     <input
                       type="text"
                       id="edit-first"
@@ -1281,7 +1380,7 @@ const PersonnelRegister = () => {
                     />
                   </div>
                   <div className={styles.prFormGroup}>
-                    <label htmlFor="edit-last">Last Name</label>
+                    <label htmlFor="edit-last">Last Name *</label>
                     <input
                       type="text"
                       id="edit-last"
@@ -1310,7 +1409,6 @@ const PersonnelRegister = () => {
                           designation: e.target.value,
                         }))
                       }
-                      required
                     />
                   </div>
                   <div className={styles.prFormGroup}>
@@ -1325,7 +1423,6 @@ const PersonnelRegister = () => {
                           station: e.target.value,
                         }))
                       }
-                      required
                     />
                   </div>
                   <div className={styles.prFormGroup}>
@@ -1340,12 +1437,12 @@ const PersonnelRegister = () => {
                       }
                       options={{
                         dateFormat: "Y-m-d",
-                        minDate: "today",
+                        minDate: editFormData.date_hired || "today",
                       }}
                     />
                   </div>
-            
                 </div>
+                
                 <div className={styles.prFormRow}>
                   <div className={styles.prFormGroup}>
                     <label htmlFor="edit-birth">Birth Date</label>
@@ -1359,7 +1456,7 @@ const PersonnelRegister = () => {
                       }
                       options={{
                         dateFormat: "Y-m-d",
-                        maxDate: "today",
+                        maxDate: editFormData.date_hired || "today",
                       }}
                     />
                   </div>
@@ -1375,11 +1472,16 @@ const PersonnelRegister = () => {
                       }
                       options={{
                         dateFormat: "Y-m-d",
-                        maxDate: "today",
+                        minDate: editFormData.birth_date || "1900-01-01",
+                        maxDate: editFormData.retirement_date || "today",
                       }}
                     />
                   </div>
                   <div className={styles.prFormGroup}></div>
+                </div>
+
+                <div className={styles.prDateValidationNote}>
+                  <small>Note: Birth Date ≤ Date Hired ≤ Retirement Date</small>
                 </div>
 
                 <div className={styles.prFormActions}>
@@ -1435,10 +1537,7 @@ const PersonnelRegister = () => {
 
       {/* Edit Rank Modal */}
       {showEditRankModal && (
-        <div
-          id="editRankModal"
-          className={`${styles.rankModal} ${styles.show}`}
-        >
+        <div id="editRankModal" className={`${styles.rankModal} ${styles.show}`}>
           <div className={styles.rankModalContent}>
             <div className={styles.rankModalHeader}>
               <h2>Select Rank</h2>
@@ -1472,10 +1571,7 @@ const PersonnelRegister = () => {
       {/* Delete Modal */}
       {showDeleteConfirm && (
         <div className={styles.preModalDelete} style={{ display: "flex" }}>
-          <div
-            className={styles.preModalContentDelete}
-            style={{ maxWidth: "450px" }}
-          >
+          <div className={styles.preModalContentDelete} style={{ maxWidth: "450px" }}>
             <div className={styles.preModalHeaderDelete}>
               <h2 style={{ marginLeft: "30px" }}>Confirm Deletion</h2>
               <span className={styles.preCloseBtn} onClick={cancelDelete}>
