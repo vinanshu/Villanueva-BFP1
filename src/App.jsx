@@ -29,18 +29,20 @@ import Placement from "./components/Placement";
 import History from "./components/History";
 
 // Recruitment Components
-import RecruitmentDashboard from "./components/RecruitmentDashboard"; // You need to create this
+import RecruitmentDashboard from "./components/RecruitmentDashboard";
 
 // Employee Components
 import EmployeeDashboard from "./components/EmployeeDashboard";
 import EmployeeLeaveDashboard from "./components/EmployeeLeaveDashboard";
 import EmployeeLeaveRequest from "./components/EmployeeLeaveRequest";
+import MyClearanceRecordPersonnel from "./components/MyClearanceRecordPersonnel";
 
 // Inspector Components
 import InspectorDashboard from "./components/InspectorDashboard";
 import InspectorInventoryControl from "./components/InspectorInventoryControl";
 import InspectorEquipmentInspection from "./components/InspectorEquipmentInspection";
 import InspectorInspectionReport from "./components/InspectorInspectionReport";
+import InspectionHistory from "./components/InspectionHistory"; // ADD THIS IMPORT
 
 import UserSwitcher from "./UserSwitcher";
 import { ToastContainer } from "react-toastify";
@@ -192,7 +194,6 @@ function App() {
                 path="/recruitment/profile"
                 element={
                   <ProtectedRoute requiredRole="recruitment">
-                    {/* Create a RecruitmentProfile component or reuse PersonnelProfile with different props */}
                     <PersonnelProfile isRecruitment={true} />
                   </ProtectedRoute>
                 }
@@ -202,7 +203,7 @@ function App() {
               <Route
                 path="/InspectorDashboard"
                 element={
-                  <ProtectedRoute requiredRole="admin"> {/* Note: inspector logs in as admin role */}
+                  <ProtectedRoute requiredRole="admin">
                     <InspectorDashboard />
                   </ProtectedRoute>
                 }
@@ -231,6 +232,15 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              {/* ADD INSPECTION HISTORY ROUTE */}
+              <Route
+                path="/inspectionHistory"
+                element={
+                  <ProtectedRoute requiredRole="admin">
+                    <InspectionHistory />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Employee-only routes */}
               <Route
@@ -254,6 +264,32 @@ function App() {
                 element={
                   <ProtectedRoute requiredRole="employee">
                     <EmployeeLeaveRequest />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/myClearanceRecords"
+                element={
+                  <ProtectedRoute requiredRole="employee">
+                    <MyClearanceRecordPersonnel />
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/recruitment/myClearanceRecords"
+                element={
+                  <ProtectedRoute requiredRole="recruitment">
+                    <MyClearanceRecordPersonnel />
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/inspector/myClearanceRecords"
+                element={
+                  <ProtectedRoute requiredRole="admin">
+                    <MyClearanceRecordPersonnel />
                   </ProtectedRoute>
                 }
               />

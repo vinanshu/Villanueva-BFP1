@@ -377,54 +377,54 @@ const Login = () => {
 
   // Recruitment Personnel Login Handler
   const handleRecruitmentLogin = async (recruitmentUser) => {
-    try {
-      console.log("Processing recruitment personnel login:", recruitmentUser.username);
-      
-      const userData = {
-        username: recruitmentUser.username,
-        role: "recruitment",
-        name: recruitmentUser.candidate || "Recruitment Candidate",
-        id: recruitmentUser.id,
-        personnelData: recruitmentUser,
-        isRecruitment: true,
-        isAdmin: false
-      };
+  try {
+    console.log("Processing recruitment personnel login:", recruitmentUser.username);
+    
+    const userData = {
+      username: recruitmentUser.username,
+      role: "recruitment",  // Make sure this is set
+      name: recruitmentUser.candidate || "Recruitment Candidate",
+      id: recruitmentUser.id,
+      personnelData: recruitmentUser,
+      isRecruitment: true,  // This should be true
+      isAdmin: false        // This should be false
+    };
 
-      console.log("Recruitment user data prepared:", userData);
+    console.log("Recruitment user data prepared:", userData);
 
-      // Store session in localStorage
-      localStorage.setItem('currentUser', JSON.stringify(userData));
-      localStorage.setItem('isRecruitment', 'true');
-      localStorage.setItem('isAdmin', 'false');
-      localStorage.setItem('auth', JSON.stringify({
-        user: userData,
-        token: 'recruitment-token',
-        isAuthenticated: true
-      }));
+    // Store session in localStorage
+    localStorage.setItem('currentUser', JSON.stringify(userData));
+    localStorage.setItem('isRecruitment', 'true');
+    localStorage.setItem('isAdmin', 'false');
+    localStorage.setItem('auth', JSON.stringify({
+      user: userData,
+      token: 'recruitment-token',
+      isAuthenticated: true
+    }));
 
-      // Reset security with 0 instead of null
-      await updateSecurityRecord({
-        failed_attempts: 0,
-        lockout_count: 0,
-        temp_until: 0,
-        brute_force_until: 0
-      });
+    // Reset security
+    await updateSecurityRecord({
+      failed_attempts: 0,
+      lockout_count: 0,
+      temp_until: 0,
+      brute_force_until: 0
+    });
 
-      // Call login from AuthContext
-      console.log("Calling login with recruitment userData");
-      login(userData);
-      
-      // Navigate to recruitment dashboard
-      console.log("Navigating to /recruitment");
-      navigate("/recruitment");
-      return true;
+    // Call login from AuthContext
+    console.log("Calling login with recruitment userData");
+    login(userData);
+    
+    // Navigate to recruitment dashboard
+    console.log("Navigating to /recruitment");
+    navigate("/recruitment");
+    return true;
 
-    } catch (error) {
-      console.error("Recruitment login error:", error);
-      showModal("Login Error", "Failed to process recruitment login. Please try again.");
-      return false;
-    }
-  };
+  } catch (error) {
+    console.error("Recruitment login error:", error);
+    showModal("Login Error", "Failed to process recruitment login. Please try again.");
+    return false;
+  }
+};
 
   // Admin Login Handler
   const handleAdminLogin = async () => {

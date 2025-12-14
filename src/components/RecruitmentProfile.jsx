@@ -250,128 +250,73 @@ const RecruitmentDashboard = () => {
   };
 
   const uploadDocument = async () => {
-  if (!selectedDocument || !selectedFile) {
-    alert("Please select a document type and file");
-    return;
-  }
-
-  if (!candidateData?.id) {
-    alert("Please complete your profile first");
-    return;
-  }
-
-  try {
-    setUploading(true);
-    
-    // Get file extension
-    const fileExt = selectedFile.name.split('.').pop();
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substring(2, 8);
-    
-    // Create unique filename
-    const fileName = `${selectedDocument}_${timestamp}_${randomStr}.${fileExt}`;
-    const filePath = `${candidateData.id}/${fileName}`;
-
-    console.log('Uploading to path:', filePath);
-
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('recruitment-documents')
-      .upload(filePath, selectedFile, {
-        cacheControl: '3600',
-        upsert: false
-      });
-
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
-      
-      // Check if it's an RLS error
-      if (uploadError.message.includes('policy') || uploadError.message.includes('security')) {
-        alert("Permission error. Please contact admin to set up proper permissions.");
-        return;
-      }
-      
-      throw uploadError;
+    if (!selectedDocument || !selectedFile) {
+      alert("Please select a document type and file");
+      return;
     }
 
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('recruitment-documents')
-      .getPublicUrl(filePath);
-
-    // Save to database - WITHOUT mime_type for now
-    const { data: dbData, error: dbError } = await supabase
-      .from("recruitment_documents")
-      .insert([{
-        candidate_id: candidateData.id,
-        candidate_name: candidateData.full_name || candidateData.candidate,
-        document_type: selectedDocument,
-        file_name: selectedFile.name,
-        file_url: publicUrl,
-        file_size: selectedFile.size,
-        // REMOVE mime_type for now - it doesn't exist in the table
-        // mime_type: selectedFile.type,
-        status: 'pending_review',
-        uploaded_at: new Date().toISOString()
-      }])
-      .select();
-
-    if (dbError) {
-      console.error("Database insert error:", dbError);
-      
-      // If mime_type column error, retry without it
-      if (dbError.message.includes('mime_type')) {
-        console.log("Retrying without mime_type column...");
-        
-        const { error: retryError } = await supabase
-          .from("recruitment_documents")
-          .insert([{
-            candidate_id: candidateData.id,
-            candidate_name: candidateData.full_name || candidateData.candidate,
-            document_type: selectedDocument,
-            file_name: selectedFile.name,
-            file_url: publicUrl,
-            file_size: selectedFile.size,
-            status: 'pending_review',
-            uploaded_at: new Date().toISOString()
-          }]);
-          
-        if (retryError) throw retryError;
-      } else {
-        // Try to delete the uploaded file if database insert fails
-        try {
-          await supabase.storage
-            .from('recruitment-documents')
-            .remove([filePath]);
-        } catch (cleanupError) {
-          console.warn("Could not cleanup uploaded file:", cleanupError);
-        }
-        
-        if (dbError.message.includes('policy') || dbError.message.includes('security')) {
-          alert("Database permission error. Please contact admin to fix RLS policies.");
-          return;
-        }
-        
-        throw dbError;
-      }
+    if (!candidateData?.id) {
+      alert("Please complete your profile first");
+      return;
     }
 
-    console.log("Document uploaded successfully:", dbData);
+    try {
+      setUploading(true);
+      
+      // Get file extension
+      const fileExt = selectedFile.name.split('.').pop();
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      
+      // Create unique filename
+      const fileName = `${selectedDocument}_${timestamp}_${randomStr}.${fileExt}`;
+      const filePath = `${candidateData.id}/${fileName}`;
 
-    // Refresh and reset
-    await loadDocuments();
-    setSelectedDocument("");
-    setSelectedFile(null);
-    setShowUploadSection(false);
-    alert("✅ Document uploaded successfully! It will be reviewed by HR.");
+      console.log('Uploading to path:', filePath);
 
-  } catch (error) {
-    console.error("Error uploading document:", error);
-    alert(`❌ Failed to upload document: ${error.message}`);
-  } finally {
-    setUploading(false);
-  }
-};
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('recruitment-documents')
+        .upload(filePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('recruitment-documents')
+        .getPublicUrl(filePath);
+
+      // Save to database
+      const { error: dbError } = await supabase
+        .from("recruitment_documents")
+        .insert([{
+          candidate_id: candidateData.id,
+          document_type: selectedDocument,
+          file_name: selectedFile.name,
+          file_url: publicUrl,
+          file_size: selectedFile.size,
+          status: 'pending_review'
+        }]);
+
+      if (dbError) throw dbError;
+
+      // Refresh and reset
+      await loadDocuments();
+      setSelectedDocument("");
+      setSelectedFile(null);
+      setShowUploadSection(false);
+      alert("✅ Document uploaded successfully! It will be reviewed by HR.");
+
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      alert(`❌ Failed to upload document: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const deleteDocument = async (documentId, fileUrl) => {
     if (!confirm("Are you sure you want to delete this document?")) return;

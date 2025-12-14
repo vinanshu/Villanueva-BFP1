@@ -1,24 +1,14 @@
 // Inspection.jsx
 import React, { useEffect, useState, useRef } from "react";
 import styles from "./InspectorInventoryControl.module.css"
-import { Html5QrcodeScanner, Html5QrcodeScanType } from "html5-qrcode";
+import { Html5QrcodeScanner } from "html5-qrcode";
 import InspectorSidebar from "./InspectorSidebar";
 import Hamburger from "./Hamburger.jsx";
 import { useSidebar } from "./SidebarContext.jsx";
-
 import Flatpickr from "react-flatpickr";
 import "flatpickr/dist/flatpickr.css";
 import { Title, Meta } from "react-head";
-// Adjust path to your Database.js file if necessary
-import {
-  getAll,
-  addRecord,
-  updateRecord,
-  deleteRecord,
-  STORE_INSPECTIONS,
-  STORE_INVENTORY,
-  STORE_PERSONNEL,
-} from "./db.jsx";
+import { supabase } from "../lib/supabaseClient"; // Import Supabase client
 
 export default function InspectionControl() {
   // data
@@ -39,12 +29,12 @@ export default function InspectionControl() {
 
   // add form controlled fields
   const emptyNew = {
-    equipmentId: "",
-    equipmentName: "",
-    inspectorId: "",
-    inspectorName: "",
-    inspectionDate: "",
-    nextInspectionDate: "",
+    equipment_id: "",
+    equipment_name: "",
+    inspector_id: "",
+    inspector_name: "",
+    inspection_date: "",
+    next_inspection_date: "",
     status: "",
     findings: "",
     recommendations: "",
@@ -54,15 +44,15 @@ export default function InspectionControl() {
 
   // State to track floating labels for add sidebar
   const [floatingLabels, setFloatingLabels] = useState({
-    equipmentId: false,
-    inspectorId: false,
+    equipment_id: false,
+    inspector_id: false,
     status: false,
   });
 
   // State to track floating labels for edit modal
   const [editFloatingLabels, setEditFloatingLabels] = useState({
-    equipmentId: false,
-    inspectorId: false,
+    equipment_id: false,
+    inspector_id: false,
     status: false,
   });
 
@@ -90,13 +80,18 @@ export default function InspectionControl() {
     (i) => i.status === "Needs Attention"
   ).length;
 
-  // Load inspections, inventory & personnel
+  // Load inspections, inventory & personnel from Supabase
   async function loadInspections() {
     try {
-      const items = (await getAll(STORE_INSPECTIONS)) || [];
-      setInspections(items);
+      const { data, error } = await supabase
+        .from("inspections")
+        .select("*")
+        .order("inspection_date", { ascending: false });
+
+      if (error) throw error;
+      setInspections(data || []);
       // reset page if necessary
-      const totalPages = Math.max(1, Math.ceil(items.length / rowsPerPage));
+      const totalPages = Math.max(1, Math.ceil((data?.length || 0) / rowsPerPage));
       if (currentPage > totalPages) setCurrentPage(totalPages);
     } catch (err) {
       console.error("loadInspections error", err);
@@ -105,8 +100,13 @@ export default function InspectionControl() {
 
   async function loadInventory() {
     try {
-      const items = (await getAll(STORE_INVENTORY)) || [];
-      setInventory(items);
+      const { data, error } = await supabase
+        .from("inventory")
+        .select("id, item_name, item_code, category")
+        .order("item_name");
+
+      if (error) throw error;
+      setInventory(data || []);
     } catch (err) {
       console.error("loadInventory error", err);
     }
@@ -114,8 +114,13 @@ export default function InspectionControl() {
 
   async function loadPersonnel() {
     try {
-      const ppl = (await getAll(STORE_PERSONNEL)) || [];
-      setPersonnel(ppl);
+      const { data, error } = await supabase
+        .from("personnel")
+        .select("id, first_name, last_name")
+        .order("last_name");
+
+      if (error) throw error;
+      setPersonnel(data || []);
     } catch (err) {
       console.error("loadPersonnel error", err);
     }
@@ -134,25 +139,25 @@ export default function InspectionControl() {
     setFloatingLabels((prev) => ({ ...prev, [field]: value !== "" }));
 
     // Auto-fill equipment name when equipment is selected
-    if (field === "equipmentId") {
+    if (field === "equipment_id") {
       const selectedEquipment = inventory.find((item) => item.id === value);
       if (selectedEquipment) {
         setNewInspection((prev) => ({
           ...prev,
-          equipmentId: value,
-          equipmentName: selectedEquipment.itemName,
+          equipment_id: value,
+          equipment_name: selectedEquipment.item_name,
         }));
       }
     }
 
     // Auto-fill inspector name when inspector is selected
-    if (field === "inspectorId") {
+    if (field === "inspector_id") {
       const selectedInspector = personnel.find((person) => person.id === value);
       if (selectedInspector) {
         setNewInspection((prev) => ({
           ...prev,
-          inspectorId: value,
-          inspectorName: `${selectedInspector.first_name} ${selectedInspector.last_name}`,
+          inspector_id: value,
+          inspector_name: `${selectedInspector.first_name} ${selectedInspector.last_name}`,
         }));
       }
     }
@@ -164,25 +169,25 @@ export default function InspectionControl() {
     setEditFloatingLabels((prev) => ({ ...prev, [field]: value !== "" }));
 
     // Auto-fill equipment name when equipment is selected
-    if (field === "equipmentId") {
+    if (field === "equipment_id") {
       const selectedEquipment = inventory.find((item) => item.id === value);
       if (selectedEquipment) {
         setEditInspection((prev) => ({
           ...prev,
-          equipmentId: value,
-          equipmentName: selectedEquipment.itemName,
+          equipment_id: value,
+          equipment_name: selectedEquipment.item_name,
         }));
       }
     }
 
     // Auto-fill inspector name when inspector is selected
-    if (field === "inspectorId") {
+    if (field === "inspector_id") {
       const selectedInspector = personnel.find((person) => person.id === value);
       if (selectedInspector) {
         setEditInspection((prev) => ({
           ...prev,
-          inspectorId: value,
-          inspectorName: `${selectedInspector.first_name} ${selectedInspector.last_name}`,
+          inspector_id: value,
+          inspector_name: `${selectedInspector.first_name} ${selectedInspector.last_name}`,
         }));
       }
     }
@@ -207,9 +212,9 @@ export default function InspectionControl() {
 
     filtered = filtered.filter((i) => {
       const text =
-        `${i.equipmentName} ${i.inspectorName} ${i.status} ${i.findings} ${i.recommendations} ${i.notes}`.toLowerCase();
+        `${i.equipment_name} ${i.inspector_name} ${i.status} ${i.findings} ${i.recommendations} ${i.notes}`.toLowerCase();
       const catMatch =
-        !cat || (i.equipmentName || "").toLowerCase().includes(cat);
+        !cat || (i.equipment_name || "").toLowerCase().includes(cat);
       const statMatch = !stat || (i.status || "").toLowerCase().includes(stat);
       const searchMatch = !s || text.includes(s);
       return catMatch && statMatch && searchMatch;
@@ -356,8 +361,8 @@ export default function InspectionControl() {
     loadPersonnel();
     // Reset floating labels when opening sidebar
     setFloatingLabels({
-      equipmentId: false,
-      inspectorId: false,
+      equipment_id: false,
+      inspector_id: false,
       status: false,
     });
   }
@@ -366,8 +371,8 @@ export default function InspectionControl() {
     setIsAddSidebarOpen(false);
     setNewInspection(emptyNew);
     setFloatingLabels({
-      equipmentId: false,
-      inspectorId: false,
+      equipment_id: false,
+      inspector_id: false,
       status: false,
     });
   }
@@ -375,23 +380,41 @@ export default function InspectionControl() {
   async function handleAddSubmit(e) {
     e.preventDefault();
     try {
-      await addRecord(STORE_INSPECTIONS, newInspection);
+      const { data, error } = await supabase
+        .from("inspections")
+        .insert([{
+          equipment_id: newInspection.equipment_id,
+          equipment_name: newInspection.equipment_name,
+          inspector_id: newInspection.inspector_id,
+          inspector_name: newInspection.inspector_name,
+          inspection_date: newInspection.inspection_date,
+          next_inspection_date: newInspection.next_inspection_date,
+          status: newInspection.status,
+          findings: newInspection.findings,
+          recommendations: newInspection.recommendations,
+          notes: newInspection.notes
+        }])
+        .select();
+
+      if (error) throw error;
+      
       await loadInspections();
       closeAddSidebar();
     } catch (err) {
       console.error("add error", err);
+      alert(`Failed to add inspection: ${err.message}`);
     }
   }
 
   function openEditModal(inspection) {
     setEditId(inspection.id);
     const editData = {
-      equipmentId: inspection.equipmentId || "",
-      equipmentName: inspection.equipmentName || "",
-      inspectorId: inspection.inspectorId || "",
-      inspectorName: inspection.inspectorName || "",
-      inspectionDate: inspection.inspectionDate || "",
-      nextInspectionDate: inspection.nextInspectionDate || "",
+      equipment_id: inspection.equipment_id || "",
+      equipment_name: inspection.equipment_name || "",
+      inspector_id: inspection.inspector_id || "",
+      inspector_name: inspection.inspector_name || "",
+      inspection_date: inspection.inspection_date || "",
+      next_inspection_date: inspection.next_inspection_date || "",
       status: inspection.status || "",
       findings: inspection.findings || "",
       recommendations: inspection.recommendations || "",
@@ -401,8 +424,8 @@ export default function InspectionControl() {
 
     // Set initial floating labels for edit modal
     setEditFloatingLabels({
-      equipmentId: !!editData.equipmentId,
-      inspectorId: !!editData.inspectorId,
+      equipment_id: !!editData.equipment_id,
+      inspector_id: !!editData.inspector_id,
       status: !!editData.status,
     });
 
@@ -416,8 +439,8 @@ export default function InspectionControl() {
     setEditId(null);
     setEditInspection(emptyNew);
     setEditFloatingLabels({
-      equipmentId: false,
-      inspectorId: false,
+      equipment_id: false,
+      inspector_id: false,
       status: false,
     });
   }
@@ -426,13 +449,31 @@ export default function InspectionControl() {
     e.preventDefault();
     if (!editId) return;
 
-    const updated = { ...editInspection, id: editId };
     try {
-      await updateRecord(STORE_INSPECTIONS, updated);
+      const { error } = await supabase
+        .from("inspections")
+        .update({
+          equipment_id: editInspection.equipment_id,
+          equipment_name: editInspection.equipment_name,
+          inspector_id: editInspection.inspector_id,
+          inspector_name: editInspection.inspector_name,
+          inspection_date: editInspection.inspection_date,
+          next_inspection_date: editInspection.next_inspection_date,
+          status: editInspection.status,
+          findings: editInspection.findings,
+          recommendations: editInspection.recommendations,
+          notes: editInspection.notes,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", editId);
+
+      if (error) throw error;
+      
       await loadInspections();
       closeEditModal();
     } catch (err) {
       console.error("edit error", err);
+      alert(`Failed to update inspection: ${err.message}`);
     }
   }
 
@@ -449,11 +490,18 @@ export default function InspectionControl() {
   async function performDelete() {
     if (!deleteId) return;
     try {
-      await deleteRecord(STORE_INSPECTIONS, deleteId);
+      const { error } = await supabase
+        .from("inspections")
+        .delete()
+        .eq("id", deleteId);
+
+      if (error) throw error;
+      
       await loadInspections();
       cancelDelete();
     } catch (err) {
       console.error("delete error", err);
+      alert(`Failed to delete inspection: ${err.message}`);
     }
   }
 
@@ -503,17 +551,23 @@ export default function InspectionControl() {
         };
 
         qrScannerRef.current.html5QrcodeScanner.render(
-          (decodedText) => {
+          async (decodedText) => {
             console.log("Scanned barcode:", decodedText);
-            // Find equipment by barcode and auto-fill
-            const scannedEquipment = inventory.find(
-              (item) => item.itemCode === decodedText
-            );
-            if (scannedEquipment) {
+            // Find equipment by barcode in Supabase
+            const { data: scannedEquipment, error } = await supabase
+              .from("inventory")
+              .select("*")
+              .eq("item_code", decodedText)
+              .single();
+
+            if (error) {
+              console.error("Error finding equipment:", error);
+              alert(`Equipment with barcode ${decodedText} not found`);
+            } else if (scannedEquipment) {
               setNewInspection((prev) => ({
                 ...prev,
-                equipmentId: scannedEquipment.id,
-                equipmentName: scannedEquipment.itemName,
+                equipment_id: scannedEquipment.id,
+                equipment_name: scannedEquipment.item_name,
               }));
             }
             stopScanner();
@@ -606,9 +660,8 @@ export default function InspectionControl() {
     <div className={styles.inspectionAppContainer}>
       <Title>Inspection Control | BFP Villanueva</Title>
       <Meta name="robots" content="noindex, nofollow" />
-<InspectorSidebar />
+      <InspectorSidebar />
       <Hamburger />
-  
 
       <div className={`main-content ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <h1>Inspection Control</h1>
@@ -744,18 +797,18 @@ export default function InspectionControl() {
                     <select
                       id={styles.inspectionAddEquipment}
                       required
-                      value={newInspection.equipmentId}
+                      value={newInspection.equipment_id}
                       onChange={(e) =>
-                        handleAddSelectChange("equipmentId", e.target.value)
+                        handleAddSelectChange("equipment_id", e.target.value)
                       }
                       className={
-                        floatingLabels.equipmentId ? styles.floating : ""
+                        floatingLabels.equipment_id ? styles.floating : ""
                       }
                     >
                       <option value="" disabled hidden></option>
                       {inventory.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.itemName} - {item.itemCode}
+                          {item.item_name} - {item.item_code}
                         </option>
                       ))}
                     </select>
@@ -766,12 +819,12 @@ export default function InspectionControl() {
                     <select
                       id={styles.inspectionAddInspector}
                       required
-                      value={newInspection.inspectorId}
+                      value={newInspection.inspector_id}
                       onChange={(e) =>
-                        handleAddSelectChange("inspectorId", e.target.value)
+                        handleAddSelectChange("inspector_id", e.target.value)
                       }
                       className={
-                        floatingLabels.inspectorId ? styles.floating : ""
+                        floatingLabels.inspector_id ? styles.floating : ""
                       }
                     >
                       <option value="" disabled hidden></option>
@@ -811,13 +864,13 @@ export default function InspectionControl() {
                       id={styles.inspectionAddInspectionDate}
                       type="date"
                       required
-                      value={newInspection.inspectionDate}
+                      value={newInspection.inspection_date}
                       onChange={(dates) => {
                         if (dates && dates[0]) {
                           const dateStr = dates[0].toISOString().split("T")[0];
                           setNewInspection((s) => ({
                             ...s,
-                            inspectionDate: dateStr,
+                            inspection_date: dateStr,
                           }));
                         }
                       }}
@@ -835,13 +888,13 @@ export default function InspectionControl() {
                       id={styles.inspectionAddNextInspectionDate}
                       type="date"
                       required
-                      value={newInspection.nextInspectionDate}
+                      value={newInspection.next_inspection_date}
                       onChange={(dates) => {
                         if (dates && dates[0]) {
                           const dateStr = dates[0].toISOString().split("T")[0];
                           setNewInspection((s) => ({
                             ...s,
-                            nextInspectionDate: dateStr,
+                            next_inspection_date: dateStr,
                           }));
                         }
                       }}
@@ -975,10 +1028,10 @@ export default function InspectionControl() {
               ) : (
                 paginated.map((inspection) => (
                   <tr key={inspection.id}>
-                    <td>{inspection.equipmentName}</td>
-                    <td>{inspection.inspectorName}</td>
-                    <td>{formatDate(inspection.inspectionDate)}</td>
-                    <td>{formatDate(inspection.nextInspectionDate)}</td>
+                    <td>{inspection.equipment_name}</td>
+                    <td>{inspection.inspector_name}</td>
+                    <td>{formatDate(inspection.inspection_date)}</td>
+                    <td>{formatDate(inspection.next_inspection_date)}</td>
                     <td>
                       <span
                         className={`${styles.inspectionStatus} ${
@@ -1043,7 +1096,7 @@ export default function InspectionControl() {
                   <p className={styles.inspectionDocumentNameHighlight}>
                     "
                     {inspections.find((item) => item.id === deleteId)
-                      ?.equipmentName || "this equipment"}
+                      ?.equipment_name || "this equipment"}
                     "?
                   </p>
                   <p className={styles.inspectionDeleteWarning}>
@@ -1105,12 +1158,12 @@ export default function InspectionControl() {
                       <select
                         id={styles.inspectionEditEquipment}
                         required
-                        value={editInspection.equipmentId}
+                        value={editInspection.equipment_id}
                         onChange={(e) =>
-                          handleEditSelectChange("equipmentId", e.target.value)
+                          handleEditSelectChange("equipment_id", e.target.value)
                         }
                         className={`${styles.inspectionModalSelect} ${
-                          editFloatingLabels.equipmentId ? styles.floating : ""
+                          editFloatingLabels.equipment_id ? styles.floating : ""
                         }`}
                       >
                         <option value="" disabled hidden>
@@ -1118,7 +1171,7 @@ export default function InspectionControl() {
                         </option>
                         {inventory.map((item) => (
                           <option key={item.id} value={item.id}>
-                            {item.itemName} - {item.itemCode}
+                            {item.item_name} - {item.item_code}
                           </option>
                         ))}
                       </select>
@@ -1133,12 +1186,12 @@ export default function InspectionControl() {
                       <select
                         id={styles.inspectionEditInspector}
                         required
-                        value={editInspection.inspectorId}
+                        value={editInspection.inspector_id}
                         onChange={(e) =>
-                          handleEditSelectChange("inspectorId", e.target.value)
+                          handleEditSelectChange("inspector_id", e.target.value)
                         }
                         className={`${styles.inspectionModalSelect} ${
-                          editFloatingLabels.inspectorId ? styles.floating : ""
+                          editFloatingLabels.inspector_id ? styles.floating : ""
                         }`}
                       >
                         <option value="" disabled hidden>
@@ -1190,7 +1243,7 @@ export default function InspectionControl() {
                         id={styles.inspectionEditInspectionDate}
                         type="date"
                         required
-                        value={editInspection.inspectionDate}
+                        value={editInspection.inspection_date}
                         onChange={(dates) => {
                           if (dates && dates[0]) {
                             const dateStr = dates[0]
@@ -1198,7 +1251,7 @@ export default function InspectionControl() {
                               .split("T")[0];
                             setEditInspection((s) => ({
                               ...s,
-                              inspectionDate: dateStr,
+                              inspection_date: dateStr,
                             }));
                           }
                         }}
@@ -1219,7 +1272,7 @@ export default function InspectionControl() {
                         id={styles.inspectionEditNextInspectionDate}
                         type="date"
                         required
-                        value={editInspection.nextInspectionDate}
+                        value={editInspection.next_inspection_date}
                         onChange={(dates) => {
                           if (dates && dates[0]) {
                             const dateStr = dates[0]
@@ -1227,7 +1280,7 @@ export default function InspectionControl() {
                               .split("T")[0];
                             setEditInspection((s) => ({
                               ...s,
-                              nextInspectionDate: dateStr,
+                              next_inspection_date: dateStr,
                             }));
                           }
                         }}

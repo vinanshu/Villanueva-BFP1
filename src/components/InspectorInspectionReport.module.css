@@ -1,73 +1,165 @@
-/* Main content styling */
-.IIRMainContent {
-  margin-left: 220px;
-  padding: 20px;
-  background-color: #f8f9fa;
-  min-height: 100vh;
-}
+/* InspectorInspectionReport.module.css */
 
-/* Section Styling */
+/* Main container - Fixed: Removed duplicate gradient background */
 .IIRSection {
-  background: white;
-  border-radius: 8px;
   padding: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: #f8f9fa;
+  min-height: 100vh;
 }
 
 .IIRSectionHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 15px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   border-bottom: 2px solid #e9ecef;
 }
 
 .IIRSectionHeader h2 {
+  font-size: 28px;
+  color: #2d3748;
+  font-weight: 700;
   margin: 0;
-  color: #333;
-  font-size: 1.5rem;
-  font-weight: 600;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
 .IIRViewAll {
-  color: #007BFF;
-  text-decoration: none;
-  font-weight: 500;
+  font-size: 14px;
+  color: #718096;
+  background: #f7fafc;
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* Stats Summary */
+.statsSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.statCard {
+  background: white;
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   transition: all 0.3s ease;
+  border: 1px solid #e9ecef;
 }
 
-.IIRViewAll:hover {
-  text-decoration: underline;
-  background-color: #f8f9fa;
+.statCard:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
-/* Table Styling */
+.statNumber {
+  display: block;
+  font-size: 42px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.statLabel {
+  font-size: 14px;
+  color: #718096;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+/* Loading state */
+.loadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+}
+
+.loadingContainer h2 {
+  font-size: 24px;
+  color: #2d3748;
+  margin-bottom: 10px;
+}
+
+.loadingContainer p {
+  color: #718096;
+  font-size: 16px;
+}
+
+/* No data message */
+.noDataMessage {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+}
+
+.noDataMessage h3 {
+  font-size: 24px;
+  color: #2d3748;
+  margin-bottom: 10px;
+}
+
+.noDataMessage p {
+  color: #718096;
+  margin-bottom: 25px;
+  font-size: 16px;
+}
+
+/* Table Container */
+.tableContainer {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
 .IIRTable {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 2rem;
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  min-width: 1000px;
 }
 
-.IIRTable th,
-.IIRTable td {
-  padding: 12px 15px;
-  text-align: left;
-  border: 1px solid #dee2e6;
+.IIRTable thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .IIRTable th {
-  background-color: #529ae1;
+  padding: 20px;
+  text-align: left;
   color: white;
   font-weight: 600;
   font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   border-bottom: 2px solid #dee2e6;
+}
+
+.IIRTable tbody tr {
+  transition: all 0.3s ease;
+  border-bottom: 1px solid #e2e8f0;
+  animation: IIRHighlight 0.5s ease;
 }
 
 .IIRTable tbody tr:nth-child(even) {
@@ -75,34 +167,146 @@
 }
 
 .IIRTable tbody tr:hover {
-  background-color: #e9ecef;
-  transition: background-color 0.2s ease;
+  background: #e9ecef;
 }
 
-.IIRNoData {
+.IIRTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+.IIRTable td {
+  padding: 20px;
+  color: #2d3748;
+  font-size: 14px;
+  vertical-align: top;
+  border: 1px solid #dee2e6;
+}
+
+.IIRTable td:first-child {
+  font-weight: 600;
+}
+
+/* Personnel Info */
+.personnelRole {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 4px;
+}
+
+.personnelId {
+  font-size: 11px;
+  color: #a0aec0;
+  margin-top: 2px;
+  font-family: monospace;
+}
+
+/* Status Badges */
+.statusBadge {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 100px;
   text-align: center;
-  color: #6c757d;
-  font-style: italic;
-  padding: 40px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* Button Styling */
+.statusPending {
+  background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+  color: white;
+}
+
+.statusInProgress {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  color: white;
+}
+
+.statusCompleted {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+}
+
+.statusRejected {
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+  color: white;
+}
+
+.statusCancelled {
+  background: linear-gradient(135deg, #a0aec0 0%, #718096 100%);
+  color: white;
+}
+
+.statusDefault {
+  background: linear-gradient(135deg, #cbd5e0 0%, #a0aec0 100%);
+  color: white;
+}
+
+.verifiedInfo {
+  font-size: 11px;
+  color: #718096;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+/* Missing Equipment */
+.missingCount {
+  display: inline-block;
+  background: #fed7d7;
+  color: #9b2c2c;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.missingAmount {
+  font-size: 11px;
+  color: #9b2c2c;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.noMissing {
+  color: #38a169;
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Action Buttons */
+.actionButtons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .IIRBtn {
   padding: 8px 16px;
   border: none;
-  color: white;
-  cursor: pointer;
-  border-radius: 4px;
-  margin-right: 8px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
+  cursor: pointer;
   transition: all 0.3s ease;
   text-transform: none;
+  letter-spacing: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-right: 8px;
+  margin-bottom: 4px;
 }
 
 .IIRBtn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .IIRBtn:disabled {
@@ -118,140 +322,438 @@
 }
 
 .IIRVerify {
-  background-color: #28a745;
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
 }
 
 .IIRVerify:hover:not(:disabled) {
-  background-color: #218838;
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
 }
 
 .IIRReject {
-  background-color: #dc3545;
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+  color: white;
 }
 
 .IIRReject:hover {
-  background-color: #c82333;
+  background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
 }
 
-/* Missing Amount Input Styling */
-.IIRAmountInput {
-  width: 100px;
-  padding: 4px 8px;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
-  margin: 0 5px;
-  font-size: 12px;
-}
-
-.IIRAmountInput:focus {
-  outline: none;
-  border-color: #007BFF;
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-}
-
-.IIRSaveAmountBtn {
-  margin-left: 5px;
-  padding: 4px 8px;
-  background-color: #17a2b8;
+.IIRView {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
   color: white;
+}
+
+.IIRView:hover {
+  background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+}
+
+.IIRRefresh {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.IIRRefresh:hover {
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+}
+
+.createSampleBtn {
+  background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+  color: white;
+}
+
+.createSampleBtn:hover {
+  background: linear-gradient(135deg, #dd6b20 0%, #c05621 100%);
+}
+
+/* Detail Row */
+.detailRow {
+  background: #f8fafc !important;
+  border-top: none !important;
+}
+
+.detailRow td {
+  padding: 0 !important;
+}
+
+.equipmentDetails {
+  padding: 25px;
+  background: #f8fafc;
+}
+
+.equipmentDetails h4 {
+  font-size: 14px;
+  color: #2d3748;
+  margin-bottom: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.equipmentList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.equipmentItem {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-left: 4px solid #667eea;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.equipmentName {
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 14px;
+}
+
+.equipmentStatus {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  display: inline-block;
+  width: fit-content;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.equipmentStatus.Damaged,
+.equipmentStatus.Lost,
+.equipmentStatus.Missing,
+.equipmentStatus.Repair {
+  background: #fed7d7;
+  color: #9b2c2c;
+}
+
+.equipmentStatus.Operational,
+.equipmentStatus.Good,
+.equipmentStatus.Available {
+  background: #c6f6d5;
+  color: #276749;
+}
+
+.equipmentStatus.Unknown {
+  background: #e2e8f0;
+  color: #4a5568;
+}
+
+.equipmentValue {
+  font-size: 12px;
+  color: #718096;
+  font-family: monospace;
+}
+
+/* Missing Amount Section */
+.missingAmountSection {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-top: 20px;
+  border: 1px solid #e2e8f0;
+}
+
+.missingAmountSection h4 {
+  margin-bottom: 15px;
+  color: #2d3748;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.amountEdit {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.amountInput {
+  padding: 10px;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  width: 200px;
+  transition: border-color 0.3s ease;
+}
+
+.amountInput:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.saveAmountBtn {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+  padding: 10px 20px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.saveAmountBtn:hover {
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+}
+
+.cancelAmountBtn {
+  background: #e2e8f0;
+  color: #4a5568;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.cancelAmountBtn:hover {
+  background: #cbd5e0;
+}
+
+.amountDisplay {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.amountValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: #9b2c2c;
+  font-family: monospace;
+}
+
+.editAmountBtn {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
   font-size: 12px;
-  transition: background-color 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
 }
 
-.IIRSaveAmountBtn:hover {
-  background-color: #138496;
+.editAmountBtn:hover {
+  background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
 }
 
-/* Status cell styling */
-.IIRTable td:nth-child(6) {
-  max-width: 200px;
+/* Modal Styles */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
 }
 
-.IIRTable td:nth-child(6) small {
-  display: block;
-  margin-top: 5px;
-  color: #6c757d;
+.modalContent {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 500px;
+  overflow: hidden;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modalHeader {
+  padding: 25px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modalHeader h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.modalClose {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 28px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.3s ease;
+}
+
+.modalClose:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.modalBody {
+  padding: 30px;
+}
+
+.reasonInput {
+  width: 100%;
+  padding: 15px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.3s ease;
+  margin-top: 10px;
+}
+
+.reasonInput:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.modalNote {
   font-size: 12px;
+  color: #718096;
+  margin-top: 15px;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.modalActions {
+  padding: 0 30px 30px 30px;
+  display: flex;
+  gap: 15px;
+  justify-content: flex-end;
+}
+
+.cancelBtn {
+  background: #e2e8f0;
+  color: #4a5568;
+}
+
+.cancelBtn:hover {
+  background: #cbd5e0;
+}
+
+.confirmRejectBtn {
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+  color: white;
+}
+
+.confirmRejectBtn:hover {
+  background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+}
+
+.confirmRejectBtn:disabled {
+  background: #cbd5e0;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Responsive Design */
 @media (max-width: 1200px) {
-  .IIRMainContent {
-    margin-left: 0;
-    padding: 15px;
+  .statsSummary {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 768px) {
   .IIRSection {
     padding: 15px;
-    margin: 10px 0;
   }
-
+  
   .IIRSectionHeader {
     flex-direction: column;
-    align-items: flex-start;
+    gap: 15px;
+    align-items: stretch;
+    text-align: center;
+  }
+  
+  .IIRSectionHeader h2 {
+    font-size: 24px;
+  }
+  
+  .headerActions {
+    flex-direction: column;
     gap: 10px;
   }
-
-  .IIRTable {
-    font-size: 14px;
-    display: block;
-    overflow-x: auto;
+  
+  .statsSummary {
+    grid-template-columns: 1fr;
   }
-
-  .IIRTable th,
-  .IIRTable td {
-    padding: 8px 10px;
-    white-space: nowrap;
+  
+  .actionButtons {
+    flex-direction: column;
   }
-
-  .IIRBtn {
-    padding: 6px 12px;
-    font-size: 12px;
-    margin-right: 4px;
-    margin-bottom: 4px;
+  
+  .equipmentList {
+    grid-template-columns: 1fr;
   }
-
-  .IIRAmountInput {
-    width: 80px;
+  
+  .modalContent {
+    max-width: 100%;
+    margin: 10px;
+  }
+  
+  .amountInput {
+    width: 150px;
   }
 }
 
 @media (max-width: 480px) {
-  .IIRMainContent {
-    padding: 10px;
-  }
-
-  .IIRSection {
-    padding: 10px;
-  }
-
-  .IIRSectionHeader h2 {
-    font-size: 1.25rem;
-  }
-
   .IIRTable {
-    font-size: 12px;
-  }
-
-  .IIRTable th,
-  .IIRTable td {
-    padding: 6px 8px;
-  }
-
-  .IIRBtn {
     display: block;
-    width: 100%;
-    margin-right: 0;
-    margin-bottom: 5px;
+    overflow-x: auto;
+    white-space: nowrap;
   }
-
-  .IIRAmountInput {
-    width: 70px;
+  
+  .statNumber {
+    font-size: 32px;
+  }
+  
+  .modalActions {
+    flex-direction: column;
+  }
+  
+  .modalActions .IIRBtn {
+    width: 100%;
+  }
+  
+  .amountInput {
+    width: 120px;
   }
 }
 
@@ -263,8 +765,4 @@
   100% {
     background-color: transparent;
   }
-}
-
-.IIRTable tbody tr {
-  animation: IIRHighlight 0.5s ease;
 }

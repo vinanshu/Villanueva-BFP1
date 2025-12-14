@@ -1,4 +1,4 @@
-// RecruitmentPersonnel.jsx
+// RecruitmentPersonnel.jsx - FIXED VERSION
 import React, { useState, useEffect } from "react";
 import styles from "./RecruitmentPersonnel.module.css";
 import Sidebar from "./Sidebar.jsx";
@@ -61,13 +61,11 @@ const RecruitmentPersonnel = () => {
   const generateUsername = (candidateName) => {
     if (!candidateName) return "";
     
-    // Remove special characters and spaces, convert to lowercase
     const baseUsername = candidateName
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '')
-      .slice(0, 15); // Limit length
+      .slice(0, 15);
     
-    // Add random numbers for uniqueness
     const randomNumbers = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     
     return `${baseUsername}${randomNumbers}`;
@@ -79,18 +77,15 @@ const RecruitmentPersonnel = () => {
     const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
     let password = "";
     
-    // Ensure at least one of each type
     password += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[Math.floor(Math.random() * 26)];
     password += "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)];
     password += "0123456789"[Math.floor(Math.random() * 10)];
     password += "!@#$%^&*"[Math.floor(Math.random() * 8)];
     
-    // Fill the rest
     for (let i = 4; i < length; i++) {
       password += charset[Math.floor(Math.random() * charset.length)];
     }
     
-    // Shuffle the password
     return password.split('').sort(() => Math.random() - 0.5).join('');
   };
 
@@ -100,7 +95,6 @@ const RecruitmentPersonnel = () => {
       const generatedUsername = generateUsername(formData.candidate);
       setUsername(generatedUsername);
       
-      // Also generate password if not already set
       if (!password) {
         const generatedPassword = generatePassword();
         setPassword(generatedPassword);
@@ -147,13 +141,11 @@ const RecruitmentPersonnel = () => {
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         alert('Please select an image file (JPEG, PNG, etc.)');
         return;
       }
       
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         alert('Image file size should be less than 5MB');
         return;
@@ -161,7 +153,6 @@ const RecruitmentPersonnel = () => {
       
       setPhotoFile(file);
       
-      // Create preview URL
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result);
@@ -174,14 +165,12 @@ const RecruitmentPersonnel = () => {
   const handleResumeChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validate file type
       const allowedTypes = [
         'application/pdf', 
         'application/msword', 
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ];
       
-      // Check both MIME type and file extension
       const fileExtension = file.name.split('.').pop().toLowerCase();
       const isValidType = allowedTypes.includes(file.type) || 
                          ['pdf', 'doc', 'docx'].includes(fileExtension);
@@ -191,7 +180,6 @@ const RecruitmentPersonnel = () => {
         return;
       }
       
-      // Validate file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
         alert('Resume file size should be less than 10MB');
         return;
@@ -205,7 +193,6 @@ const RecruitmentPersonnel = () => {
   // Upload file to Supabase Storage
   const uploadFile = async (file, bucket, fileName) => {
     try {
-      // Create unique filename
       const fileExt = fileName.split('.').pop();
       const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
       const filePath = `${bucket}/${uniqueFileName}`;
@@ -222,7 +209,6 @@ const RecruitmentPersonnel = () => {
         throw error;
       }
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('recruitment-files')
         .getPublicUrl(filePath);
@@ -239,7 +225,6 @@ const RecruitmentPersonnel = () => {
     if (!url) return;
     
     try {
-      // Extract the file path from the URL
       const urlParts = url.split('/');
       const filePath = urlParts.slice(urlParts.indexOf('recruitment-files') + 1).join('/');
       
@@ -266,12 +251,18 @@ const RecruitmentPersonnel = () => {
     await addNewCandidate();
   };
 
+  // FIXED: Add new candidate with safe field mapping
   const addNewCandidate = async () => {
     try {
       setSubmitting(true);
       setUploadProgress(0);
 
-      // Validate required fields
+      if (!formData.candidate) {
+        alert('Candidate name is required');
+        setSubmitting(false);
+        return;
+      }
+
       if (!username || !password) {
         alert('Please ensure username and password are generated');
         setSubmitting(false);
@@ -281,13 +272,11 @@ const RecruitmentPersonnel = () => {
       let photoUrl = "";
       let resumeUrl = "";
 
-      // Upload photo if selected
       if (photoFile) {
         setUploadProgress(30);
         photoUrl = await uploadFile(photoFile, 'photos', photoFile.name);
       }
 
-      // Upload resume if selected
       if (resumeFile) {
         setUploadProgress(60);
         resumeUrl = await uploadFile(resumeFile, 'resumes', resumeFile.name);
@@ -295,49 +284,67 @@ const RecruitmentPersonnel = () => {
 
       setUploadProgress(90);
 
-      const newCandidate = {
+      // Check what fields actually exist by examining existing records
+      const sampleRecord = records[0];
+      const existingFields = sampleRecord ? Object.keys(sampleRecord) : [];
+
+      // Build candidate object with only fields that are likely to exist
+      const candidateData = {
         candidate: formData.candidate,
-        position: formData.position,
+        position: formData.position || 'Firefighter Candidate',
         username: username,
         password: password,
-        application_date: formData.applicationDate,
-        stage: formData.stage,
-        interview_date: formData.interviewDate,
-        status: formData.status,
-        photo_url: photoUrl,
-        resume_url: resumeUrl,
+        stage: formData.stage || 'Applied',
+        status: formData.status || 'Pending',
       };
 
-      const { data, error } = await supabase
+      // Only add these fields if they exist in the table structure
+      if (existingFields.includes('full_name')) {
+        candidateData.full_name = formData.candidate;
+      }
+
+      if (existingFields.includes('photo_url')) {
+        candidateData.photo_url = photoUrl || null;
+      }
+
+      if (existingFields.includes('resume_url')) {
+        candidateData.resume_url = resumeUrl || null;
+      }
+
+      if (existingFields.includes('application_date')) {
+        candidateData.application_date = formData.applicationDate || null;
+      }
+
+      if (existingFields.includes('interview_date')) {
+        candidateData.interview_date = formData.interviewDate || null;
+      }
+
+      if (existingFields.includes('auth_user_id')) {
+        candidateData.auth_user_id = generateUniqueId();
+      }
+
+      console.log('Inserting candidate with fields:', Object.keys(candidateData));
+
+      const { error } = await supabase
         .from('recruitment_personnel')
-        .insert([newCandidate])
-        .select()
-        .single();
+        .insert([candidateData]);
 
       if (error) {
         console.error('Error adding candidate:', error);
-        
-        if (error.code === '23505') {
-          alert('Username already exists. Please try again.');
-        } else {
-          alert('Failed to add candidate. Please try again.');
-        }
+        alert(`Failed to add candidate: ${error.message}\n\nPlease check if all database columns exist.`);
         return;
       }
 
       setUploadProgress(100);
-
-      // Refresh the data
       await fetchRecruitmentData();
       
-      // Reset form and file states
       resetForm();
       setShowForm(false);
       setCurrentPage(1);
       
       setTimeout(() => {
         setUploadProgress(0);
-        alert('Candidate added successfully!\n\nCredentials:\nUsername: ' + username + '\nPassword: ' + password);
+        alert('✅ Candidate added successfully!\n\nCredentials:\nUsername: ' + username + '\nPassword: ' + password);
       }, 500);
       
     } catch (error) {
@@ -347,6 +354,11 @@ const RecruitmentPersonnel = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Helper function to generate unique ID
+  const generateUniqueId = () => {
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
   };
 
   const resetForm = () => {
@@ -373,12 +385,12 @@ const RecruitmentPersonnel = () => {
     const record = records.find((item) => item.id === id);
     if (record) {
       setFormData({
-        candidate: record.candidate,
-        position: record.position,
+        candidate: record.candidate || "",
+        position: record.position || "",
         applicationDate: record.application_date || "",
-        stage: record.stage,
+        stage: record.stage || "",
         interviewDate: record.interview_date || "",
-        status: record.status,
+        status: record.status || "",
         photoUrl: record.photo_url || "",
         resumeUrl: record.resume_url || "",
       });
@@ -391,6 +403,7 @@ const RecruitmentPersonnel = () => {
     }
   };
 
+  // FIXED: Update candidate with safe field mapping
   const handleUpdateCandidate = async (e) => {
     e.preventDefault();
     
@@ -405,21 +418,17 @@ const RecruitmentPersonnel = () => {
       let oldPhotoUrl = formData.photoUrl;
       let oldResumeUrl = formData.resumeUrl;
 
-      // Upload new photo if selected
       if (photoFile) {
         setUploadProgress(30);
         photoUrl = await uploadFile(photoFile, 'photos', photoFile.name);
-        // Delete old photo if it exists
         if (oldPhotoUrl) {
           await deleteFile(oldPhotoUrl);
         }
       }
 
-      // Upload new resume if selected
       if (resumeFile) {
         setUploadProgress(60);
         resumeUrl = await uploadFile(resumeFile, 'resumes', resumeFile.name);
-        // Delete old resume if it exists
         if (oldResumeUrl) {
           await deleteFile(oldResumeUrl);
         }
@@ -427,19 +436,46 @@ const RecruitmentPersonnel = () => {
 
       setUploadProgress(90);
 
+      // Check what fields exist in the table
+      const sampleRecord = records[0];
+      const existingFields = sampleRecord ? Object.keys(sampleRecord) : [];
+
+      // Build update data with only existing fields
       const updatedData = {
         candidate: formData.candidate,
         position: formData.position,
         username: username,
         password: password,
-        application_date: formData.applicationDate,
         stage: formData.stage,
-        interview_date: formData.interviewDate,
         status: formData.status,
-        photo_url: photoUrl,
-        resume_url: resumeUrl,
-        updated_at: new Date().toISOString(),
       };
+
+      // Only include fields that exist
+      if (existingFields.includes('full_name')) {
+        updatedData.full_name = formData.candidate;
+      }
+
+      if (existingFields.includes('photo_url')) {
+        updatedData.photo_url = photoUrl;
+      }
+
+      if (existingFields.includes('resume_url')) {
+        updatedData.resume_url = resumeUrl;
+      }
+
+      if (existingFields.includes('application_date')) {
+        updatedData.application_date = formData.applicationDate || null;
+      }
+
+      if (existingFields.includes('interview_date')) {
+        updatedData.interview_date = formData.interviewDate || null;
+      }
+
+      if (existingFields.includes('updated_at')) {
+        updatedData.updated_at = new Date().toISOString();
+      }
+
+      console.log('Updating candidate with fields:', Object.keys(updatedData));
 
       const { error } = await supabase
         .from('recruitment_personnel')
@@ -448,28 +484,21 @@ const RecruitmentPersonnel = () => {
 
       if (error) {
         console.error('Error updating candidate:', error);
-        
-        if (error.code === '23505') {
-          alert('Username already exists. Please change the username.');
-        } else {
-          alert('Failed to update candidate. Please try again.');
-        }
+        alert(`Failed to update candidate: ${error.message}`);
         return;
       }
 
       setUploadProgress(100);
 
-      // Refresh the data
       await fetchRecruitmentData();
       
-      // Reset states
       setShowEditModal(false);
       setEditId(null);
       resetForm();
       
       setTimeout(() => {
         setUploadProgress(0);
-        alert('Candidate updated successfully!');
+        alert('✅ Candidate updated successfully!');
       }, 500);
       
     } catch (error) {
@@ -490,10 +519,8 @@ const RecruitmentPersonnel = () => {
     if (deleteId === null) return;
 
     try {
-      // Get the record first to delete associated files
       const record = records.find((item) => item.id === deleteId);
       
-      // Delete associated files from storage if they exist
       if (record?.photo_url) {
         await deleteFile(record.photo_url);
       }
@@ -502,7 +529,6 @@ const RecruitmentPersonnel = () => {
         await deleteFile(record.resume_url);
       }
 
-      // Delete from database
       const { error } = await supabase
         .from('recruitment_personnel')
         .delete()
@@ -514,14 +540,13 @@ const RecruitmentPersonnel = () => {
         return;
       }
 
-      // Refresh the data
       await fetchRecruitmentData();
       
       setShowDeleteModal(false);
       setDeleteId(null);
       setCurrentPage(1);
       
-      alert('Candidate deleted successfully!');
+      alert('✅ Candidate deleted successfully!');
       
     } catch (error) {
       console.error('Error in confirmDelete:', error);
@@ -615,7 +640,6 @@ const RecruitmentPersonnel = () => {
   function applyFilters(items) {
     let filtered = [...items];
 
-    // Card filter
     if (currentFilterCard === "applied") {
       filtered = filtered.filter((i) => i.stage?.toLowerCase() === "applied");
     } else if (currentFilterCard === "screening") {
@@ -628,7 +652,6 @@ const RecruitmentPersonnel = () => {
       );
     }
 
-    // Text filters
     const s = search.trim().toLowerCase();
     const stageFilter = filterStage.trim().toLowerCase();
     const statusFilter = filterStatus.trim().toLowerCase();
@@ -692,7 +715,6 @@ const RecruitmentPersonnel = () => {
 
     const buttons = [];
 
-    // Previous button
     buttons.push(
       <button
         key="prev"
@@ -706,7 +728,6 @@ const RecruitmentPersonnel = () => {
       </button>
     );
 
-    // Always show first page
     buttons.push(
       <button
         key={1}
@@ -720,7 +741,6 @@ const RecruitmentPersonnel = () => {
       </button>
     );
 
-    // Show ellipsis after first page if needed
     if (currentPage > 3) {
       buttons.push(
         <span key="ellipsis1" className={styles.paginationEllipsis}>
@@ -729,7 +749,6 @@ const RecruitmentPersonnel = () => {
       );
     }
 
-    // Show pages around current page
     let startPage = Math.max(2, currentPage - 1);
     let endPage = Math.min(pageCount - 1, currentPage + 1);
 
@@ -741,7 +760,6 @@ const RecruitmentPersonnel = () => {
       startPage = Math.max(2, pageCount - 3);
     }
 
-    // Generate middle page buttons
     for (let i = startPage; i <= endPage; i++) {
       if (i > 1 && i < pageCount) {
         buttons.push(
@@ -759,7 +777,6 @@ const RecruitmentPersonnel = () => {
       }
     }
 
-    // Show ellipsis before last page if needed
     if (currentPage < pageCount - 2) {
       buttons.push(
         <span key="ellipsis2" className={styles.paginationEllipsis}>
@@ -768,7 +785,6 @@ const RecruitmentPersonnel = () => {
       );
     }
 
-    // Always show last page if there is more than 1 page
     if (pageCount > 1) {
       buttons.push(
         <button
@@ -784,7 +800,6 @@ const RecruitmentPersonnel = () => {
       );
     }
 
-    // Next button
     buttons.push(
       <button
         key="next"
