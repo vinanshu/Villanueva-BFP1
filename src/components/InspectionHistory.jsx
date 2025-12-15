@@ -46,12 +46,12 @@ const InspectionHistory = () => {
     try {
       console.log("Loading inspection history data...");
       
-      // 1. Load inspection records
+      // 1. Load inspection records from the new table
       const { data: inspectionData, error: inspectionError } = await supabase
-        .from("clearance_requests")
+        .from("inspections")
         .select(`
           *,
-          personnel:personnel_id (
+          inspector:inspector_id (
             id,
             first_name,
             last_name,
@@ -59,7 +59,7 @@ const InspectionHistory = () => {
             designation
           )
         `)
-        .order("created_at", { ascending: false });
+        .order("inspection_date", { ascending: false });
 
       if (inspectionError) {
         console.error("Error loading inspections:", inspectionError);
@@ -168,24 +168,27 @@ const InspectionHistory = () => {
     return inspections.filter(inspection => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = searchTerm === "" || 
-        (inspection.personnel && (
-          (inspection.personnel.first_name?.toLowerCase() || '').includes(searchLower) ||
-          (inspection.personnel.last_name?.toLowerCase() || '').includes(searchLower) ||
-          (inspection.type?.toLowerCase() || '').includes(searchLower) ||
-          (inspection.reason?.toLowerCase() || '').includes(searchLower)
+        (inspection.inspector && (
+          (inspection.inspector.first_name?.toLowerCase() || '').includes(searchLower) ||
+          (inspection.inspector.last_name?.toLowerCase() || '').includes(searchLower) ||
+          (inspection.equipment_name?.toLowerCase() || '').includes(searchLower) ||
+          (inspection.findings?.toLowerCase() || '').includes(searchLower) ||
+          (inspection.notes?.toLowerCase() || '').includes(searchLower)
         )) ||
-        (!inspection.personnel && (
-          (inspection.type?.toLowerCase() || '').includes(searchLower) ||
-          (inspection.reason?.toLowerCase() || '').includes(searchLower)
+        (!inspection.inspector && (
+          (inspection.equipment_name?.toLowerCase() || '').includes(searchLower) ||
+          (inspection.findings?.toLowerCase() || '').includes(searchLower) ||
+          (inspection.notes?.toLowerCase() || '').includes(searchLower)
         ));
       
       const matchesStatus = selectedStatus === "all" || 
         (inspection.status?.toLowerCase() || '') === selectedStatus.toLowerCase();
       
+      // Since inspections table doesn't have "type" field, we'll use status as type filter
       const matchesType = selectedType === "all" || 
-        (inspection.type?.toLowerCase() || '') === selectedType.toLowerCase();
+        (inspection.status?.toLowerCase() || '') === selectedType.toLowerCase();
       
-      const inspectionDate = inspection.created_at ? new Date(inspection.created_at) : null;
+      const inspectionDate = inspection.inspection_date ? new Date(inspection.inspection_date) : null;
       let matchesDate = true;
       
       if (dateRange.start || dateRange.end) {
@@ -271,8 +274,9 @@ const InspectionHistory = () => {
     const statusLower = status.toLowerCase();
     if (statusLower.includes('pending')) return styles.statusPending;
     if (statusLower.includes('progress')) return styles.statusInProgress;
-    if (statusLower.includes('completed') || statusLower.includes('approved')) return styles.statusCompleted;
-    if (statusLower.includes('rejected') || statusLower.includes('cancelled')) return styles.statusRejected;
+    if (statusLower.includes('completed')) return styles.statusCompleted;
+    if (statusLower.includes('failed')) return styles.statusRejected;
+    if (statusLower.includes('cancelled')) return styles.statusCancelled;
     return styles.statusDefault;
   };
 
@@ -291,10 +295,10 @@ const InspectionHistory = () => {
 
   const getStatusIcon = (status) => {
     const statusLower = status?.toLowerCase() || '';
-    if (statusLower.includes('completed') || statusLower.includes('approved')) {
+    if (statusLower.includes('completed')) {
       return <CheckCircle size={16} />;
     }
-    if (statusLower.includes('rejected') || statusLower.includes('cancelled')) {
+    if (statusLower.includes('failed') || statusLower.includes('cancelled')) {
       return <XCircle size={16} />;
     }
     if (statusLower.includes('pending')) {
@@ -351,20 +355,21 @@ const InspectionHistory = () => {
       let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
       
       if (activeTab === "inspections") {
-        const headers = ["ID", "Personnel", "Type", "Status", "Reason", "Request Date", "Approved By", "Approved At", "Missing Amount"];
+        // Updated headers for inspections table
+        const headers = ["ID", "Equipment Name", "Inspector", "Status", "Findings", "Inspection Date", "Next Inspection Date", "Recommendations", "Notes"];
         csvContent += headers.join(",") + "\n";
         
         data.forEach(item => {
           const row = [
             item.id || '',
-            item.personnel ? `${item.personnel.first_name || ''} ${item.personnel.last_name || ''}`.replace(/"/g, '""') : '',
-            item.type?.replace(/"/g, '""') || '',
+            item.equipment_name?.replace(/"/g, '""') || '',
+            item.inspector ? `${item.inspector.first_name || ''} ${item.inspector.last_name || ''}`.replace(/"/g, '""') : item.inspector_name?.replace(/"/g, '""') || '',
             item.status?.replace(/"/g, '""') || '',
-            item.reason?.replace(/"/g, '""') || '',
-            formatDate(item.created_at).replace(/"/g, '""'),
-            item.approved_by?.replace(/"/g, '""') || '',
-            formatDateTime(item.approved_at).replace(/"/g, '""'),
-            item.missing_amount || '0'
+            item.findings?.replace(/"/g, '""') || '',
+            formatDate(item.inspection_date).replace(/"/g, '""'),
+            formatDate(item.next_inspection_date).replace(/"/g, '""'),
+            item.recommendations?.replace(/"/g, '""') || '',
+            item.notes?.replace(/"/g, '""') || ''
           ].map(field => `"${field}"`).join(",");
           csvContent += row + "\n";
         });
@@ -420,8 +425,9 @@ const InspectionHistory = () => {
 
   const getUniqueTypes = () => {
     if (activeTab === "inspections") {
-      const types = [...new Set(inspections.map(item => item.type).filter(Boolean))];
-      return types;
+      // For inspections, use status as type since there's no "type" field
+      const statuses = [...new Set(inspections.map(item => item.status).filter(Boolean))];
+      return statuses;
     } else {
       const actions = [...new Set(inventoryLogs.map(item => item.action).filter(Boolean))];
       return actions;
@@ -508,8 +514,7 @@ const InspectionHistory = () => {
               <span className={styles.statNumber}>
                 {inspections.filter(i => 
                   i.status && 
-                  (i.status.toLowerCase().includes('completed') || 
-                   i.status.toLowerCase().includes('approved'))
+                  i.status.toLowerCase().includes('completed')
                 ).length}
               </span>
               <span className={styles.statLabel}>Completed</span>
@@ -528,9 +533,9 @@ const InspectionHistory = () => {
                 <User size={24} />
               </div>
               <span className={styles.statNumber}>
-                {[...new Set(inspections.map(i => i.personnel_id).filter(Boolean))].length}
+                {[...new Set(inspections.map(i => i.inspector_id).filter(Boolean))].length}
               </span>
-              <span className={styles.statLabel}>Personnel Involved</span>
+              <span className={styles.statLabel}>Inspectors</span>
             </div>
           </div>
 
@@ -564,7 +569,7 @@ const InspectionHistory = () => {
               <Search size={18} className={styles.searchIcon} />
               <input
                 type="text"
-                placeholder={`Search ${activeTab === "inspections" ? "personnel, type, or reason..." : "item, inspector, or notes..."}`}
+                placeholder={`Search ${activeTab === "inspections" ? "equipment, inspector, or findings..." : "item, inspector, or notes..."}`}
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -589,19 +594,11 @@ const InspectionHistory = () => {
                 }}
               >
                 <option value="all">All {activeTab === "inspections" ? "Status" : "Actions"}</option>
-                {activeTab === "inspections" ? (
-                  getUniqueStatuses().map((status, index) => (
-                    <option key={index} value={status}>
-                      {status}
-                    </option>
-                  ))
-                ) : (
-                  getUniqueTypes().map((action, index) => (
-                    <option key={index} value={action}>
-                      {action}
-                    </option>
-                  ))
-                )}
+                {getUniqueTypes().map((type, index) => (
+                  <option key={index} value={type}>
+                    {type}
+                  </option>
+                ))}
               </select>
             </div>
             
@@ -616,10 +613,11 @@ const InspectionHistory = () => {
                   }}
                 >
                   <option value="all">All Types</option>
-                  <option value="Equipment Completion">Equipment Completion</option>
-                  <option value="Equipment Clearance">Equipment Clearance</option>
-                  <option value="Transfer">Transfer</option>
-                  <option value="Retirement">Retirement</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="FAILED">Failed</option>
+                  <option value="CANCELLED">Cancelled</option>
                 </select>
               </div>
             )}
@@ -676,12 +674,12 @@ const InspectionHistory = () => {
                     <thead>
                       <tr>
                         <th>ID</th>
-                        <th>Personnel</th>
-                        <th>Type</th>
+                        <th>Equipment</th>
+                        <th>Inspector</th>
                         <th>Status</th>
-                        <th>Reason</th>
-                        <th>Request Date</th>
-                        <th>Approved By</th>
+                        <th>Findings</th>
+                        <th>Inspection Date</th>
+                        <th>Next Inspection</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -693,43 +691,48 @@ const InspectionHistory = () => {
                           </td>
                           <td>
                             <div className={styles.personnelCell}>
+                              <Package size={14} className={styles.cellIcon} />
+                              <div>
+                                <strong>{inspection.equipment_name || 'Unknown Equipment'}</strong>
+                                {inspection.equipment_id && (
+                                  <div className={styles.personnelDetails}>
+                                    ID: {inspection.equipment_id.substring(0, 8)}...
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={styles.personnelCell}>
                               <User size={14} className={styles.cellIcon} />
                               <div>
-                                <strong>{inspection.personnel ? `${inspection.personnel.first_name || ''} ${inspection.personnel.last_name || ''}` : 'Unknown'}</strong>
+                                <strong>{inspection.inspector ? `${inspection.inspector.first_name || ''} ${inspection.inspector.last_name || ''}` : inspection.inspector_name || 'Unknown'}</strong>
                                 <div className={styles.personnelDetails}>
-                                  {inspection.personnel?.designation || ''} • {inspection.personnel?.rank || ''}
+                                  {inspection.inspector?.designation || ''} • {inspection.inspector?.rank || ''}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td>{inspection.type || 'Equipment'}</td>
                           <td>
                             <span className={`${styles.statusBadge} ${getStatusBadgeClass(inspection.status)}`}>
                               {getStatusIcon(inspection.status)}
-                              {inspection.status || 'Pending'}
+                              {inspection.status || 'PENDING'}
                             </span>
                           </td>
                           <td className={styles.reasonCell}>
-                            {inspection.reason || 'No reason provided'}
+                            {inspection.findings || 'No findings provided'}
                           </td>
                           <td>
                             <div className={styles.dateCell}>
                               <Calendar size={12} />
-                              {formatDate(inspection.created_at)}
+                              {formatDate(inspection.inspection_date)}
                             </div>
-                            {inspection.approved_at && (
-                              <div className={styles.approvedDate}>
-                                Approved: {formatDateTime(inspection.approved_at)}
-                              </div>
-                            )}
                           </td>
                           <td>
-                            {inspection.approved_by || 'Pending'}
-                            {(inspection.missing_amount && parseFloat(inspection.missing_amount) > 0) && (
-                              <div className={styles.missingAmount}>
-                                Missing: ₱{parseFloat(inspection.missing_amount || 0).toFixed(2)}
-                              </div>
-                            )}
+                            <div className={styles.dateCell}>
+                              <Calendar size={12} />
+                              {formatDate(inspection.next_inspection_date)}
+                            </div>
                           </td>
                           <td>
                             <button
@@ -739,17 +742,17 @@ const InspectionHistory = () => {
 Inspection Details:
 ------------------------
 ID: ${inspection.id || ''}
-Personnel: ${inspection.personnel ? `${inspection.personnel.first_name || ''} ${inspection.personnel.last_name || ''}` : 'Unknown'}
-Type: ${inspection.type || ''}
-Status: ${inspection.status || 'Pending'}
-Reason: ${inspection.reason || ''}
-Request Date: ${formatDate(inspection.created_at)}
-Effective Date: ${formatDate(inspection.effective_date)}
-Approved By: ${inspection.approved_by || ''}
-Approved At: ${formatDateTime(inspection.approved_at)}
-Missing Amount: ₱${parseFloat(inspection.missing_amount || 0).toFixed(2)}
-Rejection Reason: ${inspection.rejection_reason || ''}
-Remarks: ${inspection.remarks || ''}
+Equipment: ${inspection.equipment_name || ''}
+Equipment ID: ${inspection.equipment_id || ''}
+Inspector: ${inspection.inspector ? `${inspection.inspector.first_name || ''} ${inspection.inspector.last_name || ''}` : inspection.inspector_name || ''}
+Status: ${inspection.status || 'PENDING'}
+Inspection Date: ${formatDate(inspection.inspection_date)}
+Next Inspection Date: ${formatDate(inspection.next_inspection_date)}
+Findings: ${inspection.findings || ''}
+Recommendations: ${inspection.recommendations || ''}
+Notes: ${inspection.notes || ''}
+Created: ${formatDateTime(inspection.created_at)}
+${inspection.updated_at ? `Updated: ${formatDateTime(inspection.updated_at)}` : ''}
                                 `.trim();
                                 alert(details);
                               }}

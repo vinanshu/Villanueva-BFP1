@@ -11,6 +11,39 @@ import { Title, Meta } from "react-head";
 import { supabase } from "../lib/supabaseClient"; // Import Supabase client
 
 export default function InspectionControl() {
+  // Status constants
+  const STATUS_OPTIONS = [
+    { value: 'PENDING', label: 'Pending' },
+    { value: 'IN_PROGRESS', label: 'In Progress' },
+    { value: 'COMPLETED', label: 'Completed' },
+    { value: 'FAILED', label: 'Failed' },
+    { value: 'CANCELLED', label: 'Cancelled' }
+  ];
+
+  // Helper function to get display label for status
+  const getStatusDisplay = (status) => {
+    switch(status) {
+      case 'PENDING': return 'Pending';
+      case 'IN_PROGRESS': return 'In Progress';
+      case 'COMPLETED': return 'Completed';
+      case 'FAILED': return 'Failed';
+      case 'CANCELLED': return 'Cancelled';
+      default: return status;
+    }
+  };
+
+  // Helper function to get CSS class for status
+  const getStatusClass = (status) => {
+    switch(status) {
+      case 'COMPLETED': return styles.inspectionStatusPassed;
+      case 'FAILED': return styles.inspectionStatusFailed;
+      case 'CANCELLED': return styles.inspectionStatusCancelled;
+      case 'IN_PROGRESS': return styles.inspectionStatusInProgress;
+      case 'PENDING': return styles.inspectionStatusPending;
+      default: return '';
+    }
+  };
+
   // data
   const [inspections, setInspections] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -35,7 +68,7 @@ export default function InspectionControl() {
     inspector_name: "",
     inspection_date: "",
     next_inspection_date: "",
-    status: "",
+    status: "PENDING", // Default status
     findings: "",
     recommendations: "",
     notes: "",
@@ -46,7 +79,7 @@ export default function InspectionControl() {
   const [floatingLabels, setFloatingLabels] = useState({
     equipment_id: false,
     inspector_id: false,
-    status: false,
+    status: true, // Set to true since default is "PENDING"
   });
 
   // State to track floating labels for edit modal
@@ -71,13 +104,13 @@ export default function InspectionControl() {
   // Summary numbers (computed)
   const totalInspections = inspections.length;
   const passedInspections = inspections.filter(
-    (i) => i.status === "Passed"
+    (i) => i.status === "COMPLETED"
   ).length;
   const failedInspections = inspections.filter(
-    (i) => i.status === "Failed"
+    (i) => i.status === "FAILED"
   ).length;
   const needsAttentionInspections = inspections.filter(
-    (i) => i.status === "Needs Attention"
+    (i) => i.status === "PENDING" || i.status === "IN_PROGRESS"
   ).length;
 
   // Load inspections, inventory & personnel from Supabase
@@ -198,11 +231,13 @@ export default function InspectionControl() {
     // card filter
     let filtered = [...items];
     if (currentFilterCard === "passed") {
-      filtered = filtered.filter((i) => i.status === "Passed");
+      filtered = filtered.filter((i) => i.status === "COMPLETED");
     } else if (currentFilterCard === "failed") {
-      filtered = filtered.filter((i) => i.status === "Failed");
+      filtered = filtered.filter((i) => i.status === "FAILED");
     } else if (currentFilterCard === "needsAttention") {
-      filtered = filtered.filter((i) => i.status === "Needs Attention");
+      filtered = filtered.filter((i) => 
+        i.status === "PENDING" || i.status === "IN_PROGRESS"
+      );
     }
 
     // category & status filters + search
@@ -363,7 +398,7 @@ export default function InspectionControl() {
     setFloatingLabels({
       equipment_id: false,
       inspector_id: false,
-      status: false,
+      status: true, // Keep true since default is "PENDING"
     });
   }
 
@@ -373,7 +408,7 @@ export default function InspectionControl() {
     setFloatingLabels({
       equipment_id: false,
       inspector_id: false,
-      status: false,
+      status: true, // Keep true since default is "PENDING"
     });
   }
 
@@ -415,7 +450,7 @@ export default function InspectionControl() {
       inspector_name: inspection.inspector_name || "",
       inspection_date: inspection.inspection_date || "",
       next_inspection_date: inspection.next_inspection_date || "",
-      status: inspection.status || "",
+      status: inspection.status || "PENDING",
       findings: inspection.findings || "",
       recommendations: inspection.recommendations || "",
       notes: inspection.notes || "",
@@ -702,9 +737,11 @@ export default function InspectionControl() {
               }}
             >
               <option value="">All Status</option>
-              <option>Passed</option>
-              <option>Failed</option>
-              <option>Needs Attention</option>
+              {STATUS_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
 
             <input
@@ -739,7 +776,7 @@ export default function InspectionControl() {
             } ${currentFilterCard === "passed" ? styles.inspectionActive : ""}`}
             onClick={() => handleCardClick("passed")}
           >
-            <h3>Passed</h3>
+            <h3>Passed (Completed)</h3>
             <p id={styles.inspectionPassedItems}>{passedInspections}</p>
           </button>
           <button
@@ -848,9 +885,11 @@ export default function InspectionControl() {
                       className={floatingLabels.status ? styles.floating : ""}
                     >
                       <option value="" disabled hidden></option>
-                      <option value="Passed">Passed</option>
-                      <option value="Failed">Failed</option>
-                      <option value="Needs Attention">Needs Attention</option>
+                      {STATUS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                     <h4>Inspection Status</h4>
                   </div>
@@ -1034,15 +1073,9 @@ export default function InspectionControl() {
                     <td>{formatDate(inspection.next_inspection_date)}</td>
                     <td>
                       <span
-                        className={`${styles.inspectionStatus} ${
-                          inspection.status === "Passed"
-                            ? styles.inspectionStatusPassed
-                            : inspection.status === "Failed"
-                            ? styles.inspectionStatusFailed
-                            : styles.inspectionStatusNeedsAttention
-                        }`}
+                        className={`${styles.inspectionStatus} ${getStatusClass(inspection.status)}`}
                       >
-                        {inspection.status}
+                        {getStatusDisplay(inspection.status)}
                       </span>
                     </td>
                     <td>{inspection.findings || "No findings"}</td>
@@ -1223,9 +1256,11 @@ export default function InspectionControl() {
                         <option value="" disabled hidden>
                           Select Status
                         </option>
-                        <option value="Passed">Passed</option>
-                        <option value="Failed">Failed</option>
-                        <option value="Needs Attention">Needs Attention</option>
+                        {STATUS_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                       <h4 className={styles.inspectionModalInputLabel}>
                         Status
